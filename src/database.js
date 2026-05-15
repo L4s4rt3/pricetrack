@@ -12,7 +12,7 @@ export async function fetchAllRecords() {
   return (data || []).map(normalizeRow)
 }
 
-function normalizeRow(row) {
+export function normalizeRow(row) {
   return {
     id: row.id,
     product: row.producto || row.product || '',
@@ -54,4 +54,16 @@ export async function addRecords(records) {
 export async function deleteRecord(id) {
   const { error } = await supabase.from(TABLE).delete().eq('id', id)
   if (error) throw error
+}
+
+export function subscribeToChanges(onChange) {
+  return supabase
+    .channel('precios-changes')
+    .on('postgres_changes',
+      { event: '*', schema: 'public', table: TABLE },
+      (payload) => {
+        onChange(payload)
+      }
+    )
+    .subscribe()
 }

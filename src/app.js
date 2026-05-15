@@ -1,4 +1,4 @@
-import { fetchAllRecords, addRecord as dbAddRecord, addRecords as dbAddRecords, deleteRecord as dbDeleteRecord } from './database.js'
+import { fetchAllRecords, addRecord as dbAddRecord, addRecords as dbAddRecords, deleteRecord as dbDeleteRecord, subscribeToChanges, normalizeRow } from './database.js'
 
 let data = []
 let charts = {}
@@ -33,6 +33,17 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500)
 }
 
+function rerenderCurrentPage() {
+  const active = document.querySelector('.page.active')?.id
+  if (!active) return
+  populateAllSelects()
+  if (active === 'page-dashboard') { renderDashboard(); renderHistoryView() }
+  else if (active === 'page-tendencias') renderTrends()
+  else if (active === 'page-comparar') renderComparePage()
+  else if (active === 'page-datos') renderTable()
+  else if (active === 'page-buscar') initSearch()
+}
+
 async function initApp() {
   try {
     data = await fetchAllRecords()
@@ -43,6 +54,20 @@ async function initApp() {
   populateAllSelects()
   renderDashboard()
   renderHistoryView()
+
+  subscribeToChanges((payload) => {
+    const { event_type, new: newRow, old: oldRow } = payload
+    if (event_type === 'INSERT' && newRow) {
+      data.push(normalizeRow(newRow))
+      showToast(`📦 Nuevo registro: ${newRow.producto}`)
+    } else if (event_type === 'DELETE' && oldRow) {
+      data = data.filter(d => d.id !== oldRow.id)
+    } else if (event_type === 'UPDATE' && newRow) {
+      const idx = data.findIndex(d => d.id === newRow.id)
+      if (idx !== -1) data[idx] = normalizeRow(newRow)
+    }
+    rerenderCurrentPage()
+  })
 }
 
 // =================== NAVIGATION ===================
