@@ -193,6 +193,10 @@ table { border-collapse: collapse; width: 100%; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="4"/><polyline points="6 10 12 4 18 10"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
       Comparar años
     </button>
+    <button class="nav-item" onclick="navigate('predicciones', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+      Predicciones
+    </button>
     <button class="nav-item" onclick="navigate('datos', this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
       Datos / Tabla
@@ -313,6 +317,27 @@ table { border-collapse: collapse; width: 100%; }
       <div class="card" style="margin-top: var(--space-6); display: none" id="compare-table-card">
         <div class="section-title">Resumen estadístico por año</div>
         <div class="table-wrap"><table class="data-table" id="compare-stats-table"></table></div>
+      </div>
+    </div>
+
+    <div class="page" id="page-predicciones">
+      <h2 class="page-title">Predicciones de Precios</h2>
+      <p class="page-subtitle">Proyección estimada para los próximos 12 meses basada en datos históricos</p>
+      <div class="filters-bar">
+        <div class="form-group">
+          <select class="form-select" id="pred-product" onchange="renderPredictions()" style="min-width:200px">
+            <option value="">Todos los productos</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid-4" id="pred-kpis"></div>
+      <div class="card" style="margin-bottom: var(--space-8)">
+        <div class="chart-label"><span>Historial real vs. predicción</span></div>
+        <div class="chart-wrap" style="height:300px"><canvas id="predChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="chart-label"><span>Pronóstico mensual detallado</span></div>
+        <div class="table-wrap"><table class="data-table" id="pred-table"></table></div>
       </div>
     </div>
 

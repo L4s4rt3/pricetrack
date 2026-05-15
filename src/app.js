@@ -40,6 +40,7 @@ function rerenderCurrentPage() {
   if (active === 'page-dashboard') { renderDashboard(); renderHistoryView() }
   else if (active === 'page-tendencias') renderTrends()
   else if (active === 'page-comparar') renderComparePage()
+  else if (active === 'page-predicciones') renderPredictions()
   else if (active === 'page-datos') renderTable()
   else if (active === 'page-buscar') initSearch()
 }
@@ -79,6 +80,7 @@ function navigate(page, btn) {
   if (page === 'dashboard') { renderDashboard(); renderHistoryView() }
   if (page === 'tendencias') renderTrends()
   if (page === 'comparar') renderComparePage()
+  if (page === 'predicciones') renderPredictions()
   if (page === 'datos') renderTable()
   if (page === 'buscar') initSearch()
 }
@@ -511,6 +513,209 @@ function renderCompare() {
 }
 window.renderCompare = renderCompare
 
+// =================== PREDICTIONS ===================
+function computePrediction(product) {
+  const filtered = product ? data.filter(d => d.product === product) : data
+  if (filtered.length < 6) return null
+
+  const years = [...new Set(filtered.map(d => d.year))].sort((a,b) => a-b)
+  const months = [...new Set(filtered.filter(d => d.month).map(d => d.month))].sort((a,b) => a-b)
+
+  if (years.length < 2 || months.length < 2) return null
+
+  const yearAvgs = years.map(y => {
+    const pts = filtered.filter(d => d.year === y).map(d => d.price)
+    return { year: y, avg: avg(pts) }
+  })
+
+  const growthRates = []
+  for (let i = 1; i < yearAvgs.length; i++) {
+    if (yearAvgs[i-1].avg > 0) {
+      growthRates.push((yearAvgs[i].avg - yearAvgs[i-1].avg) / yearAvgs[i-1].avg)
+    }
+  }
+  const avgGrowth = growthRates.length ? growthRates.reduce((a,b) => a+b, 0) / growthRates.length : 0
+
+  const monthlyFactors = {}
+  for (const m of months) {
+    const vals = filtered.filter(d => d.month === m).map(d => d.price)
+    const monthAvg = avg(vals)
+    const valsAll = filtered.map(d => d.price)
+    const overallAvg = avg(valsAll)
+    monthlyFactors[m] = overallAvg > 0 ? monthAvg / overallAvg : 1
+  }
+
+  const lastYear = Math.max(...years)
+  const lastYearData = filtered.filter(d => d.year === lastYear)
+  const lastYearAvg = yearAvgs.find(y => y.year === lastYear)?.avg || avg(lastYearData.map(d => d.price))
+
+  const predictions = []
+  let lastMonth = Math.max(...months)
+  let predYear = lastYear
+  for (let i = 0; i < 12; i++) {
+    lastMonth++
+    if (lastMonth > 12) { lastMonth = 1; predYear++ }
+    const yearsAhead = predYear - lastYear
+    const trendFactor = 1 + avgGrowth * yearsAhead
+    const seasonalFactor = monthlyFactors[lastMonth] || 1
+    const predPrice = lastYearAvg * trendFactor * seasonalFactor
+    predictions.push({ year: predYear, month: lastMonth, price: Math.round(predPrice * 1000) / 1000 })
+  }
+
+  return { predictions, avgGrowth, lastYearAvg, lastYear, monthlyFactors }
+}
+
+function renderPredictions() {
+  const selProduct = document.getElementById('pred-product')?.value
+
+  populateAllSelects();
+  ['pred-product'].forEach(id => {
+    const el = document.getElementById(id)
+    if (el) {
+      const products = getProducts()
+      el.innerHTML = `<option value="">Todos los productos</option>` + products.map(p => `<option value="${p}">${p}</option>`).join('')
+      if (selProduct) el.value = selProduct
+    }
+  })
+
+  const result = computePrediction(selProduct || null)
+  const colors = getChartColors()
+
+  if (!result) {
+    document.getElementById('pred-kpis').innerHTML = '<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Sin datos suficientes</div><div class="kpi-value" style="font-size:var(--text-base)">Necesitas al menos 2 años de datos con meses para generar predicciones</div></div>'
+    destroyChart('predChart')
+    document.getElementById('pred-table').innerHTML = ''
+    return
+  }
+
+  const { predictions, avgGrowth, lastYearAvg, lastYear } = result
+
+  const monthsToShow = Math.min(24, 12 + predictions.length)
+  const filtered = selProduct ? data.filter(d => d.product === selProduct) : data
+  const recentMonths = []
+  const sorted = [...filtered].filter(d => d.month).sort((a,b) => (a.year - b.year) || (a.month - b.month))
+  const cutoffYear = lastYear - 2
+  for (const d of sorted) {
+    if (d.year > cutoffYear || (d.year === cutoffYear && d.month >= 1)) {
+      recentMonths.push(d)
+    }
+  }
+
+  const labelSet = new Set()
+  const allLabels = []
+  const allActual = []
+  const allPred = []
+
+  for (const d of recentMonths) {
+    const key = `${d.year}-${String(d.month).padStart(2,'0')}`
+    if (!labelSet.has(key)) {
+      labelSet.add(key)
+      allLabels.push(`${MONTHS[(d.month||1)-1]} ${d.year}`)
+      allActual.push(d.price)
+      allPred.push(null)
+    }
+  }
+  for (const p of predictions) {
+    const key = `${p.year}-${String(p.month).padStart(2,'0')}`
+    if (!labelSet.has(key)) {
+      labelSet.add(key)
+      allLabels.push(`${MONTHS[p.month-1]} ${p.year}`)
+      allActual.push(null)
+      allPred.push(p.price)
+    }
+  }
+
+  destroyChart('predChart')
+  const ctx = document.getElementById('predChart')?.getContext('2d')
+  if (ctx) {
+    charts['predChart'] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: allLabels,
+        datasets: [
+          {
+            label: 'Real',
+            data: allActual,
+            borderColor: '#01696f',
+            backgroundColor: 'rgba(1,105,111,0.08)',
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: '#01696f',
+            tension: 0.3,
+            fill: true,
+            spanGaps: false
+          },
+          {
+            label: 'Predicción',
+            data: allPred,
+            borderColor: '#da7101',
+            backgroundColor: 'rgba(218,113,1,0.06)',
+            borderWidth: 2,
+            borderDash: [6, 3],
+            pointRadius: 3,
+            pointBackgroundColor: '#da7101',
+            pointStyle: 'rectRot',
+            tension: 0.3,
+            fill: true,
+            spanGaps: true
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, labels: { color: colors.tick, font: { size: 12 } } },
+          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)} €` } }
+        },
+        scales: {
+          x: { grid: { color: colors.grid }, ticks: { color: colors.tick, font: { size: 10 } } },
+          y: { grid: { color: colors.grid }, ticks: { color: colors.tick, font: { size: 11 }, callback: v => `${v} €` } }
+        }
+      }
+    })
+  }
+
+  const firstPred = predictions[0]
+  const lastPred = predictions[predictions.length - 1]
+  const midPred = predictions[Math.min(5, predictions.length - 1)]
+  const change6 = firstPred && midPred ? ((midPred.price - firstPred.price) / firstPred.price) * 100 : 0
+  const change12 = firstPred && lastPred ? ((lastPred.price - firstPred.price) / firstPred.price) * 100 : 0
+
+  document.getElementById('pred-kpis').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">Precio actual (${lastYear})</div><div class="kpi-value">${fmt(lastYearAvg)} €</div></div>
+    <div class="kpi-card"><div class="kpi-label">Tendencia anual</div><div class="kpi-value">${fmtPct(avgGrowth)}</div><div class="kpi-delta ${avgGrowth >= 0 ? 'delta-up' : 'delta-down'}">${avgGrowth >= 0 ? '▲' : '▼'} Proyección</div></div>
+    <div class="kpi-card"><div class="kpi-label">Estimado 6 meses</div><div class="kpi-value">${fmt(midPred?.price || 0)} €</div><div class="kpi-delta ${change6 >= 0 ? 'delta-up' : 'delta-down'}">${fmtPct(change6)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Estimado 12 meses</div><div class="kpi-value">${fmt(lastPred?.price || 0)} €</div><div class="kpi-delta ${change12 >= 0 ? 'delta-up' : 'delta-down'}">${fmtPct(change12)}</div></div>
+  `
+
+  const thead = `<thead><tr><th>Mes</th><th>Precio estimado</th><th>Vs. mes anterior</th><th>Vs. mismo mes año pasado</th></tr></thead>`
+  let prevPrice = null
+  const sameMonthLastYear = {}
+  if (selProduct) {
+    for (const p of predictions) {
+      const same = data.filter(d => d.product === selProduct && d.year === p.year - 1 && d.month === p.month).map(d => d.price)
+      if (same.length) sameMonthLastYear[`${p.month}`] = avg(same)
+    }
+  }
+
+  const rows = predictions.map(p => {
+    const actualPrev = prevPrice
+    prevPrice = p.price
+    const vsPrev = actualPrev ? ((p.price - actualPrev) / actualPrev) * 100 : null
+    const vsYear = sameMonthLastYear[`${p.month}`] || null
+    const vsYearPct = vsYear ? ((p.price - vsYear) / vsYear) * 100 : null
+    return `<tr>
+      <td><strong>${MONTH_NAMES[p.month-1]} ${p.year}</strong></td>
+      <td style="font-variant-numeric:tabular-nums; color:var(--color-orange); font-weight:600">${fmt(p.price)} €</td>
+      <td>${vsPrev !== null ? `<span class="badge ${vsPrev >= 0 ? 'badge-up' : 'badge-down'}">${fmtPct(vsPrev)}</span>` : '—'}</td>
+      <td>${vsYearPct !== null ? `<span class="badge ${vsYearPct >= 0 ? 'badge-up' : 'badge-down'}">${fmtPct(vsYearPct)}</span>` : '—'}</td>
+    </tr>`
+  }).join('')
+  document.getElementById('pred-table').innerHTML = thead + `<tbody>${rows}</tbody>`
+}
+window.renderPredictions = renderPredictions
+
 // =================== TABLE ===================
 function renderTable() {
   const search = document.getElementById('table-search')?.value.toLowerCase() || ''
@@ -746,4 +951,4 @@ function baseChartOptions(colors, unit) {
   })
 })()
 
-export { initApp, renderDashboard, renderDashCharts, renderTable, renderTrends, renderTrendCharts, renderComparePage, renderCompare }
+export { initApp, renderDashboard, renderDashCharts, renderTable, renderTrends, renderTrendCharts, renderComparePage, renderCompare, renderPredictions }
