@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Análisis de Precios y Tendencias</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<style>
+/* ===== DESIGN TOKENS ===== */
+:root, [data-theme="light"] {
+  --color-bg:             #f7f6f2;
+  --color-surface:        #f9f8f5;
+  --color-surface-2:      #fbfbf9;
+  --color-surface-offset: #f0ede8;
+  --color-divider:        #dcd9d5;
+  --color-border:         #d4d1ca;
+  --color-text:           #28251d;
+  --color-text-muted:     #6b6a65;
+  --color-text-faint:     #b0afa9;
+  --color-primary:        #01696f;
+  --color-primary-hover:  #0c4e54;
+  --color-primary-light:  #e0edec;
+  --color-success:        #437a22;
+  --color-success-bg:     #d4dfcc;
+  --color-error:          #a12c7b;
+  --color-error-bg:       #f0dae8;
+  --color-warning:        #964219;
+  --color-warning-bg:     #f2e3da;
+  --color-gold:           #d19900;
+  --color-gold-bg:        #f5e9c0;
+  --color-blue:           #006494;
+  --color-blue-bg:        #cde1ee;
+  --color-orange:         #da7101;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --shadow-sm: 0 1px 3px oklch(0.2 0.01 80 / 0.07);
+  --shadow-md: 0 4px 14px oklch(0.2 0.01 80 / 0.09);
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --text-xs: clamp(0.75rem, 0.7rem + 0.25vw, 0.875rem);
+  --text-sm: clamp(0.875rem, 0.8rem + 0.35vw, 1rem);
+  --text-base: clamp(1rem, 0.95rem + 0.25vw, 1.125rem);
+  --text-lg: clamp(1.125rem, 1rem + 0.75vw, 1.5rem);
+  --text-xl: clamp(1.5rem, 1.2rem + 1.25vw, 2.25rem);
+  --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem;
+  --space-4: 1rem; --space-5: 1.25rem; --space-6: 1.5rem;
+  --space-8: 2rem; --space-10: 2.5rem; --space-12: 3rem;
+  --transition: 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-theme="dark"] {
+  --color-bg:             #171614;
+  --color-surface:        #1c1b19;
+  --color-surface-2:      #201f1d;
+  --color-surface-offset: #252422;
+  --color-divider:        #2f2e2c;
+  --color-border:         #383735;
+  --color-text:           #cdccca;
+  --color-text-muted:     #888785;
+  --color-text-faint:     #585755;
+  --color-primary:        #4f98a3;
+  --color-primary-hover:  #6bb8c4;
+  --color-primary-light:  #1e3537;
+  --color-success:        #6daa45;
+  --color-success-bg:     #203420;
+  --color-error:          #d163a7;
+  --color-error-bg:       #3b1e30;
+  --color-warning:        #bb653b;
+  --color-warning-bg:     #3d2118;
+  --color-gold:           #e8af34;
+  --color-gold-bg:        #3b2d10;
+  --color-blue:           #5591c7;
+  --color-blue-bg:        #1a2e3d;
+  --color-orange:         #fdab43;
+  --shadow-sm: 0 1px 3px oklch(0 0 0 / 0.2);
+  --shadow-md: 0 4px 14px oklch(0 0 0 / 0.3);
+}
+
+/* ===== BASE ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+body { min-height: 100dvh; font-family: var(--font-body); font-size: var(--text-sm); color: var(--color-text); background: var(--color-bg); line-height: 1.6; }
+button { cursor: pointer; background: none; border: none; font: inherit; color: inherit; }
+input, select, textarea { font: inherit; color: inherit; }
+table { border-collapse: collapse; width: 100%; }
+
+/* ===== LAYOUT ===== */
+.app { display: grid; grid-template-rows: 56px 1fr; min-height: 100dvh; }
+.topbar {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-6);
+  box-shadow: var(--shadow-sm);
+}
+.topbar-brand { display: flex; align-items: center; gap: var(--space-3); }
+.topbar-brand h1 { font-family: var(--font-display); font-size: var(--text-lg); font-weight: 400; letter-spacing: -0.01em; }
+.topbar-brand span { color: var(--color-primary); font-weight: 600; }
+.topbar-actions { display: flex; align-items: center; gap: var(--space-3); }
+
+.main { display: grid; grid-template-columns: 220px 1fr; }
+.sidebar {
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  padding: var(--space-6) var(--space-4);
+  display: flex; flex-direction: column; gap: var(--space-2);
+  position: sticky; top: 56px; height: calc(100dvh - 56px); overflow-y: auto;
+}
+.nav-label { font-size: var(--text-xs); font-weight: 600; color: var(--color-text-faint); text-transform: uppercase; letter-spacing: 0.08em; padding: var(--space-4) var(--space-3) var(--space-2); }
+.nav-item {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm); font-weight: 500;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  border: none; text-align: left; width: 100%;
+}
+.nav-item:hover { background: var(--color-surface-offset); color: var(--color-text); }
+.nav-item.active { background: var(--color-primary-light); color: var(--color-primary); }
+.nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+.content { padding: var(--space-8) var(--space-8); overflow-y: auto; }
+.page { display: none; }
+.page.active { display: block; }
+
+/* ===== TYPOGRAPHY ===== */
+.page-title { font-family: var(--font-display); font-size: var(--text-xl); font-weight: 400; color: var(--color-text); margin-bottom: var(--space-2); }
+.page-subtitle { font-size: var(--text-sm); color: var(--color-text-muted); margin-bottom: var(--space-8); }
+.section-title { font-size: var(--text-base); font-weight: 600; color: var(--color-text); margin-bottom: var(--space-4); }
+
+/* ===== CARDS & GRID ===== */
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); margin-bottom: var(--space-8); }
+.grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-6); margin-bottom: var(--space-8); }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); margin-bottom: var(--space-8); }
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6);
+  box-shadow: var(--shadow-sm);
+}
+.card-full { grid-column: 1 / -1; }
+
+/* ===== KPI CARDS ===== */
+.kpi-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-xl); padding: var(--space-5) var(--space-6); }
+.kpi-label { font-size: var(--text-xs); font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: var(--space-2); }
+.kpi-value { font-size: var(--text-xl); font-weight: 700; font-variant-numeric: tabular-nums lining-nums; color: var(--color-text); line-height: 1.1; }
+.kpi-delta { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-xs); font-weight: 600; margin-top: var(--space-2); padding: 2px 8px; border-radius: var(--radius-full); }
+.delta-up { background: var(--color-success-bg); color: var(--color-success); }
+.delta-down { background: var(--color-error-bg); color: var(--color-error); }
+.delta-flat { background: var(--color-surface-offset); color: var(--color-text-muted); }
+
+/* ===== BUTTONS ===== */
+.btn { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-radius: var(--radius-md); font-size: var(--text-sm); font-weight: 500; transition: background var(--transition), color var(--transition), box-shadow var(--transition); white-space: nowrap; }
+.btn-primary { background: var(--color-primary); color: #fff; }
+.btn-primary:hover { background: var(--color-primary-hover); }
+.btn-secondary { background: var(--color-surface-offset, #f0ede8); color: var(--color-text); border: 1px solid var(--color-border); }
+.btn-secondary:hover { background: var(--color-divider); }
+.btn-ghost { color: var(--color-text-muted); padding: var(--space-2); border-radius: var(--radius-md); }
+.btn-ghost:hover { background: var(--color-surface-offset); color: var(--color-text); }
+.btn svg { width: 15px; height: 15px; }
+
+/* ===== FORMS ===== */
+.form-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-4); }
+.form-group { display: flex; flex-direction: column; gap: var(--space-2); }
+.form-label { font-size: var(--text-xs); font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.form-input, .form-select {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  transition: border-color var(--transition), box-shadow var(--transition);
+  width: 100%;
+}
+.form-input:focus, .form-select:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-primary) 15%, transparent); }
+
+/* ===== TABLE ===== */
+.table-wrap { overflow-x: auto; border-radius: var(--radius-lg); border: 1px solid var(--color-border); }
+.data-table { width: 100%; font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.data-table th { background: var(--color-surface-offset); padding: var(--space-3) var(--space-4); text-align: left; font-weight: 600; color: var(--color-text-muted); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
+.data-table td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-divider); color: var(--color-text); }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--color-surface-offset); }
+.data-table td button { color: var(--color-error); font-size: var(--text-xs); padding: 2px 6px; border-radius: var(--radius-sm); }
+.data-table td button:hover { background: var(--color-error-bg); }
+.badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--radius-full); font-size: var(--text-xs); font-weight: 600; }
+.badge-up { background: var(--color-success-bg); color: var(--color-success); }
+.badge-down { background: var(--color-error-bg); color: var(--color-error); }
+.badge-flat { background: var(--color-surface-offset); color: var(--color-text-muted); }
+
+/* ===== SEARCH / FILTERS ===== */
+.filters-bar { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-6); flex-wrap: wrap; }
+.search-box { position: relative; }
+.search-box input { padding-left: var(--space-8); min-width: 220px; }
+.search-box svg { position: absolute; left: var(--space-3); top: 50%; transform: translateY(-50%); color: var(--color-text-faint); width: 14px; height: 14px; }
+
+/* ===== CHART CONTAINER ===== */
+.chart-wrap { position: relative; width: 100%; }
+.chart-label { font-size: var(--text-xs); font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: var(--space-3); display: flex; align-items: center; justify-content: space-between; }
+
+/* ===== MODAL ===== */
+.modal-overlay { position: fixed; inset: 0; background: oklch(0 0 0 / 0.4); display: none; align-items: center; justify-content: center; z-index: 500; padding: var(--space-4); }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--color-surface); border-radius: var(--radius-xl); padding: var(--space-8); max-width: 500px; width: 100%; box-shadow: var(--shadow-md); }
+.modal-title { font-size: var(--text-lg); font-weight: 600; margin-bottom: var(--space-6); }
+.modal-actions { display: flex; justify-content: flex-end; gap: var(--space-3); margin-top: var(--space-6); }
+
+/* ===== COMPARISON ===== */
+.compare-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-6); }
+.compare-year-card { background: var(--color-surface); border: 2px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-4); text-align: center; cursor: pointer; transition: border-color var(--transition), background var(--transition); }
+.compare-year-card.selected { border-color: var(--color-primary); background: var(--color-primary-light); }
+.compare-year-card .yr { font-size: var(--text-lg); font-weight: 700; }
+.compare-year-card .avg { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: var(--space-1); }
+
+/* ===== EMPTY STATE ===== */
+.empty-state { display: flex; flex-direction: column; align-items: center; text-align: center; padding: var(--space-12) var(--space-8); color: var(--color-text-muted); }
+.empty-state svg { width: 48px; height: 48px; color: var(--color-text-faint); margin-bottom: var(--space-4); }
+.empty-state h3 { font-size: var(--text-base); font-weight: 600; color: var(--color-text); margin-bottom: var(--space-2); }
+.empty-state p { max-width: 36ch; margin-bottom: var(--space-6); font-size: var(--text-sm); }
+
+/* ===== NOTIFICATIONS ===== */
+.toast { position: fixed; bottom: var(--space-6); right: var(--space-6); background: var(--color-text); color: var(--color-bg); padding: var(--space-3) var(--space-5); border-radius: var(--radius-lg); font-size: var(--text-sm); font-weight: 500; box-shadow: var(--shadow-md); z-index: 999; opacity: 0; transform: translateY(8px); transition: opacity 0.25s, transform 0.25s; pointer-events: none; }
+.toast.show { opacity: 1; transform: translateY(0); }
+
+/* ===== THEME TOGGLE ===== */
+.theme-toggle { padding: var(--space-2); border-radius: var(--radius-md); color: var(--color-text-muted); transition: background var(--transition); }
+.theme-toggle:hover { background: var(--color-surface-offset); }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 900px) {
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .grid-2 { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .main { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  .content { padding: var(--space-4); }
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+}
+
+
+/* ===== HISTORICAL VIEW ===== */
+.history-toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+.history-panel { display:grid; grid-template-columns: 1.2fr 0.8fr; gap:16px; margin-bottom:24px; }
+.history-list { max-height: 360px; overflow:auto; }
+.history-item { padding:12px 14px; border:1px solid var(--color-border); border-radius:12px; margin-bottom:10px; background: var(--color-surface-2); }
+.history-item h4 { font-size: var(--text-sm); margin-bottom:4px; }
+.history-item .meta { font-size: var(--text-xs); color: var(--color-text-muted); display:flex; gap:10px; flex-wrap:wrap; }
+.history-item .value { font-size: var(--text-lg); font-weight:700; margin-top:6px; }
+.evolution-pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+.evo-up { background: var(--color-success-bg); color: var(--color-success); }
+.evo-down { background: var(--color-error-bg); color: var(--color-error); }
+.evo-flat { background: var(--color-surface-offset); color: var(--color-text-muted); }
+.history-card { background: var(--color-surface); border:1px solid var(--color-border); border-radius: 16px; padding: 18px; box-shadow: var(--shadow-sm); }
+.kpi-grid-5 { display:grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+@media (max-width: 1100px) { .history-panel, .kpi-grid-5 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<!-- Supabase placeholders -->
+<script>
+window.SUPABASE_CONFIG = {
+  url: 'REPLACE_WITH_SUPABASE_URL',
+  anonKey: 'REPLACE_WITH_SUPABASE_ANON_KEY',
+  table: 'precios'
+};
+</script>
+
+<div class="app">
+
+<!-- TOPBAR -->
+<header class="topbar">
+  <div class="topbar-brand">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-label="PriceTrack Logo">
+      <rect width="28" height="28" rx="7" fill="var(--color-primary)"/>
+      <path d="M7 20L11 14L15 17L21 9" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="21" cy="9" r="2" fill="white"/>
+    </svg>
+    <h1>Price<span>Track</span></h1>
+  </div>
+  <div class="topbar-actions">
+    <button class="theme-toggle" data-theme-toggle aria-label="Cambiar tema">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+    </button>
+    <button class="btn btn-primary" onclick="openAddModal()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Añadir precio
+    </button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <span class="nav-label">Navegación</span>
+    <button class="nav-item active" onclick="navigate('dashboard', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Resumen
+    </button>
+    <button class="nav-item" onclick="navigate('tendencias', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Tendencias
+    </button>
+    <button class="nav-item" onclick="navigate('comparar', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="4"/><polyline points="6 10 12 4 18 10"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
+      Comparar años
+    </button>
+    <button class="nav-item" onclick="navigate('datos', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Datos / Tabla
+    </button>
+    <button class="nav-item" onclick="navigate('buscar', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Buscar precio
+    </button>
+  </nav>
+
+  <!-- CONTENT -->
+  <main class="content" id="main-content">
+
+    <!-- ===== PAGE: DASHBOARD ===== -->
+    <div class="page active" id="page-dashboard">
+      <h2 class="page-title">Resumen de Precios</h2>
+      <p class="page-subtitle" id="dashboard-subtitle">Visión general del mercado en todos los años registrados</p>
+
+      <div class="grid-4" id="kpi-grid"></div>
+      <div class="card" style="margin-bottom: var(--space-8)">
+        <div class="chart-label"><span>Histórico y evolución</span></div>
+        <div class="history-toolbar">
+          <input class="form-input" id="history-search" placeholder="Buscar producto..." oninput="renderHistoryView()" style="min-width:220px">
+          <select class="form-select" id="history-year" onchange="renderHistoryView()"></select>
+          <select class="form-select" id="history-category" onchange="renderHistoryView()"></select>
+          <select class="form-select" id="history-sort" onchange="renderHistoryView()">
+            <option value="desc">Más reciente</option>
+            <option value="asc">Más antiguo</option>
+          </select>
+        </div>
+        <div class="history-panel">
+          <div class="history-card">
+            <div class="chart-label"><span>Evolución del histórico</span></div>
+            <div class="chart-wrap" style="height:280px"><canvas id="historyChart"></canvas></div>
+          </div>
+          <div class="history-card">
+            <div class="chart-label"><span>Resumen del producto</span></div>
+            <div id="historySummary" class="history-list"></div>
+          </div>
+        </div>
+        <div class="history-card">
+          <div class="chart-label"><span>Registro histórico</span></div>
+          <div id="historyList" class="history-list"></div>
+        </div>
+      </div>
+
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="chart-label">
+            <span>Evolución anual de precios</span>
+            <select class="form-select" id="dash-product-select" style="width:auto; padding: 4px 8px; font-size: var(--text-xs);" onchange="renderDashCharts()"></select>
+          </div>
+          <div class="chart-wrap" style="height:260px"><canvas id="annualChart"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="chart-label"><span>Distribución por categoría</span></div>
+          <div class="chart-wrap" style="height:260px"><canvas id="categoryChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chart-label"><span>Precios por mes (año seleccionado)</span>
+          <select class="form-select" id="dash-year-select" style="width:auto; padding: 4px 8px; font-size: var(--text-xs);" onchange="renderDashCharts()"></select>
+        </div>
+        <div class="chart-wrap" style="height:220px"><canvas id="monthlyChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: TENDENCIAS ===== -->
+    <div class="page" id="page-tendencias">
+      <h2 class="page-title">Análisis de Tendencias</h2>
+      <p class="page-subtitle">Detecta patrones, máximos, mínimos y variaciones en el tiempo</p>
+
+      <div class="filters-bar">
+        <div class="form-group">
+          <select class="form-select" id="trend-product" onchange="renderTrendCharts()" style="min-width:180px">
+            <option value="">Todos los productos</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <select class="form-select" id="trend-year-from" onchange="renderTrendCharts()">
+            <option value="">Desde año</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <select class="form-select" id="trend-year-to" onchange="renderTrendCharts()">
+            <option value="">Hasta año</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid-4" id="trend-kpis"></div>
+
+      <div class="grid-2">
+        <div class="card" style="grid-column: 1/-1">
+          <div class="chart-label"><span>Tendencia de precios en el tiempo</span></div>
+          <div class="chart-wrap" style="height:300px"><canvas id="trendMainChart"></canvas></div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="chart-label"><span>Precio máximo y mínimo por año</span></div>
+          <div class="chart-wrap" style="height:240px"><canvas id="trendMinMaxChart"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="chart-label"><span>Variación % año a año</span></div>
+          <div class="chart-wrap" style="height:240px"><canvas id="trendVarChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: COMPARAR ===== -->
+    <div class="page" id="page-comparar">
+      <h2 class="page-title">Comparar Años</h2>
+      <p class="page-subtitle">Selecciona dos o más años para comparar los precios directamente</p>
+
+      <div style="margin-bottom: var(--space-4)">
+        <div class="form-group" style="max-width:220px; margin-bottom: var(--space-4)">
+          <label class="form-label">Producto</label>
+          <select class="form-select" id="cmp-product" onchange="renderCompare()"></select>
+        </div>
+        <p style="font-size: var(--text-xs); color: var(--color-text-muted); margin-bottom: var(--space-3)">Haz clic en los años para seleccionarlos (mínimo 2):</p>
+        <div class="compare-grid" id="cmp-year-cards"></div>
+      </div>
+
+      <div class="card" id="compare-chart-card" style="display:none">
+        <div class="chart-label"><span>Comparativa mensual entre años seleccionados</span></div>
+        <div class="chart-wrap" style="height:300px"><canvas id="compareChart"></canvas></div>
+      </div>
+      <div class="card" style="margin-top: var(--space-6); display: none" id="compare-table-card">
+        <div class="section-title">Resumen estadístico por año</div>
+        <div class="table-wrap"><table class="data-table" id="compare-stats-table"></table></div>
+      </div>
+    </div>
+
+    <!-- ===== PAGE: DATOS ===== -->
+    <div class="page" id="page-datos">
+      <h2 class="page-title">Gestión de Datos</h2>
+      <p class="page-subtitle">Consulta, edita y exporta todos los registros de precios</p>
+
+      <div class="filters-bar">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" class="form-input" id="table-search" placeholder="Buscar producto..." oninput="renderTable()">
+        </div>
+        <select class="form-select" id="table-year-filter" onchange="renderTable()" style="min-width:130px">
+          <option value="">Todos los años</option>
+        </select>
+        <select class="form-select" id="table-cat-filter" onchange="renderTable()" style="min-width:150px">
+          <option value="">Todas las categorías</option>
+        </select>
+        <button class="btn btn-secondary" onclick="exportCSV()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Exportar CSV
+        </button>
+        <button class="btn btn-secondary" onclick="openImportModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Importar CSV
+        </button>
+      </div>
+
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Producto</th><th>Categoría</th><th>Año</th><th>Mes</th><th>Precio (€)</th><th>Unidad</th><th>Variación</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+        </table>
+      </div>
+      <div id="table-count" style="font-size:var(--text-xs); color:var(--color-text-muted); margin-top:var(--space-3)"></div>
+    </div>
+
+    <!-- ===== PAGE: BUSCAR ===== -->
+    <div class="page" id="page-buscar">
+      <h2 class="page-title">Consulta de Precios</h2>
+      <p class="page-subtitle">Busca el precio de un producto en cualquier año o período</p>
+
+      <div class="card" style="max-width:600px; margin-bottom: var(--space-8)">
+        <div class="section-title">Búsqueda rápida</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Producto</label>
+            <select class="form-select" id="search-product"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Año</label>
+            <select class="form-select" id="search-year">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mes</label>
+            <select class="form-select" id="search-month">
+              <option value="">Todos</option>
+              <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+              <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+              <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+              <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="doSearch()">Buscar</button>
+      </div>
+
+      <div id="search-results"></div>
+    </div>
+
+  </main><!-- /content -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ===== MODAL: AÑADIR PRECIO ===== -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal">
+    <div class="modal-title">Añadir registro de precio</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Producto *</label>
+        <input type="text" class="form-input" id="m-product" placeholder="Ej: Naranja navel" list="product-datalist">
+        <datalist id="product-datalist"></datalist>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Categoría</label>
+        <input type="text" class="form-input" id="m-category" placeholder="Ej: Cítricos" list="cat-datalist">
+        <datalist id="cat-datalist"></datalist>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Precio (€) *</label>
+        <input type="number" class="form-input" id="m-price" step="0.01" min="0" placeholder="0.00">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Unidad</label>
+        <input type="text" class="form-input" id="m-unit" placeholder="Ej: €/kg">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Año *</label>
+        <input type="number" class="form-input" id="m-year" min="1990" max="2100" placeholder="2024">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mes</label>
+        <select class="form-select" id="m-month">
+          <option value="">— Sin mes —</option>
+          <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+          <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+          <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+          <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom: var(--space-4)">
+      <label class="form-label">Notas</label>
+      <input type="text" class="form-input" id="m-notes" placeholder="Opcional">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('add-modal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="addRecord()">Guardar registro</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODAL: IMPORTAR CSV ===== -->
+<div class="modal-overlay" id="import-modal">
+  <div class="modal">
+    <div class="modal-title">Importar datos CSV</div>
+    <p style="font-size: var(--text-sm); color: var(--color-text-muted); margin-bottom: var(--space-4)">
+      El CSV debe tener columnas: <strong>producto, categoria, precio, unidad, año, mes, notas</strong>
+    </p>
+    <div class="form-group">
+      <label class="form-label">Pega el contenido CSV aquí</label>
+      <textarea class="form-input" id="csv-input" rows="6" style="resize: vertical; font-family: monospace; font-size: var(--text-xs)" placeholder="producto,categoria,precio,unidad,año,mes,notas&#10;Naranja,Cítricos,0.45,€/kg,2023,1,"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('import-modal')">Cancelar</button>
+      <button class="btn btn-primary" onclick="importCSV()">Importar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// =================== DATA STORE ===================
+let data = [];
+let charts = {};
+let selectedYears = [];
+
+const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const CHART_COLORS = ['#01696f','#006494','#437a22','#d19900','#da7101','#a12c7b','#964219','#5591c7'];
+
+// Seed data
+function seedData() {
+  const products = [
+    {n:'Naranja navel', c:'Cítricos', u:'€/kg', base: 0.38},
+    {n:'Limón', c:'Cítricos', u:'€/kg', base: 0.52},
+    {n:'Mandarina', c:'Cítricos', u:'€/kg', base: 0.55},
+    {n:'Melocotón', c:'Fruta de hueso', u:'€/kg', base: 0.72},
+    {n:'Albaricoque', c:'Fruta de hueso', u:'€/kg', base: 0.80},
+  ];
+  const years = [2019,2020,2021,2022,2023,2024,2025];
+  const yearMult = {2019:1.0, 2020:0.95, 2021:1.08, 2022:1.22, 2023:1.15, 2024:1.18, 2025:1.25};
+  let id = 1;
+  for (const p of products) {
+    for (const y of years) {
+      for (let m = 1; m <= 12; m++) {
+        const seasonal = 1 + 0.12 * Math.sin((m - 4) * Math.PI / 6);
+        const noise = 0.97 + Math.random() * 0.06;
+        const price = +(p.base * yearMult[y] * seasonal * noise).toFixed(3);
+        data.push({ id: id++, product: p.n, category: p.c, price, unit: p.u, year: y, month: m, notes: '' });
+      }
+    }
+  }
+}
+
+// =================== UTILS ===================
+function getUnique(field) { return [...new Set(data.map(d => d[field]))].sort(); }
+function getYears() { return getUnique('year').map(Number).sort(); }
+function getProducts() { return getUnique('product'); }
+function getCategories() { return getUnique('category'); }
+function avg(arr) { return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
+function fmt(n) { return (+n).toFixed(2); }
+function fmtPct(n) { return (n >= 0 ? '+' : '') + n.toFixed(1) + '%'; }
+
+function getChartColors() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  return {
+    grid: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+    tick: dark ? '#888785' : '#8a8880',
+    bg: dark ? '#1c1b19' : '#f9f8f5'
+  };
+}
+
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// =================== NAVIGATION ===================
+function navigate(page, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  btn.classList.add('active');
+  if (page === 'dashboard') { renderDashboard(); renderHistoryView(); }
+  if (page === 'tendencias') renderTrends();
+  if (page === 'comparar') renderComparePage();
+  if (page === 'datos') renderTable();
+  if (page === 'buscar') initSearch();
+}
+
+// =================== POPULATE SELECTS ===================
+function populateAllSelects() {
+  const years = getYears();
+  const products = getProducts();
+  const cats = getCategories();
+
+  // Datalists
+  const pd = document.getElementById('product-datalist');
+  pd.innerHTML = products.map(p => `<option value="${p}">`).join('');
+  const cd = document.getElementById('cat-datalist');
+  cd.innerHTML = cats.map(c => `<option value="${c}">`).join('');
+
+  // Dash product
+  const dps = document.getElementById('dash-product-select');
+  dps.innerHTML = products.map(p => `<option value="${p}">${p}</option>`).join('');
+
+  // Dash year
+  const dys = document.getElementById('dash-year-select');
+  dys.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+  if (years.length) dys.value = years[years.length-1];
+
+  // Trend selects
+  ['trend-product','cmp-product','search-product'].forEach(id => {
+    const el = document.getElementById(id);
+    el.innerHTML = `<option value="">Todos los productos</option>` + products.map(p => `<option value="${p}">${p}</option>`).join('');
+  });
+  ['trend-year-from','trend-year-to'].forEach(id => {
+    const el = document.getElementById(id);
+    el.innerHTML = `<option value="">-</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('');
+  });
+
+  // Table filters
+  const tyf = document.getElementById('table-year-filter');
+  tyf.innerHTML = `<option value="">Todos los años</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('');
+  const tcf = document.getElementById('table-cat-filter');
+  tcf.innerHTML = `<option value="">Todas las categorías</option>` + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+
+  // Search year
+  const sy = document.getElementById('search-year');
+  sy.innerHTML = `<option value="">Todos</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('');
+}
+
+// =================== DASHBOARD ===================
+function renderDashboard() {
+  populateAllSelects();
+  const years = getYears();
+  const allPrices = data.map(d => d.price);
+  const latestYear = years[years.length - 1];
+  const prevYear = years[years.length - 2];
+  const latestPrices = data.filter(d => d.year === latestYear).map(d => d.price);
+  const prevPrices = data.filter(d => d.year === prevYear).map(d => d.price);
+  const avgLatest = avg(latestPrices);
+  const avgPrev = avg(prevPrices);
+  const pctChange = avgPrev ? ((avgLatest - avgPrev) / avgPrev) * 100 : 0;
+  const maxP = Math.max(...allPrices);
+  const minP = Math.min(...allPrices);
+  const maxRec = data.find(d => d.price === maxP);
+  const minRec = data.find(d => d.price === minP);
+
+  document.getElementById('dashboard-subtitle').textContent = `Datos de ${years[0]} a ${latestYear} · ${data.length} registros`;
+
+  const kpis = [
+    { label: `Precio medio ${latestYear}`, value: `${fmt(avgLatest)} €`, delta: fmtPct(pctChange), up: pctChange > 0 },
+    { label: 'Total registros', value: data.length.toLocaleString('es'), delta: `${years.length} años`, flat: true },
+    { label: 'Precio máximo histórico', value: `${fmt(maxP)} €`, delta: `${maxRec?.product} (${maxRec?.year})`, flat: true },
+    { label: 'Precio mínimo histórico', value: `${fmt(minP)} €`, delta: `${minRec?.product} (${minRec?.year})`, flat: true },
+  ];
+
+  document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
+    <div class="kpi-card">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value">${k.value}</div>
+      <div class="kpi-delta ${k.flat ? 'delta-flat' : (k.up ? 'delta-up' : 'delta-down')}">${k.delta}</div>
+    </div>
+  `).join('');
+
+  renderDashCharts();
+}
+
+function renderDashCharts() {
+  const selProduct = document.getElementById('dash-product-select')?.value;
+  const selYear = parseInt(document.getElementById('dash-year-select')?.value);
+  const years = getYears();
+  const colors = getChartColors();
+
+  // Annual line chart
+  destroyChart('annualChart');
+  const annualData = years.map(y => {
+    const filtered = data.filter(d => d.year === y && (!selProduct || d.product === selProduct));
+    return avg(filtered.map(d => d.price));
+  });
+  const ctx1 = document.getElementById('annualChart').getContext('2d');
+  charts['annualChart'] = new Chart(ctx1, {
+    type: 'line',
+    data: {
+      labels: years,
+      datasets: [{
+        label: selProduct || 'Precio medio',
+        data: annualData,
+        borderColor: '#01696f',
+        backgroundColor: 'rgba(1,105,111,0.08)',
+        borderWidth: 2,
+        tension: 0.35,
+        fill: true,
+        pointRadius: 4,
+        pointBackgroundColor: '#01696f',
+      }]
+    },
+    options: baseChartOptions(colors, '€')
+  });
+
+  // Category donut
+  destroyChart('categoryChart');
+  const cats = getCategories();
+  const catAvgs = cats.map(c => avg(data.filter(d => d.category === c && d.year === (selYear || years[years.length-1])).map(d => d.price)));
+  const ctx2 = document.getElementById('categoryChart').getContext('2d');
+  charts['categoryChart'] = new Chart(ctx2, {
+    type: 'doughnut',
+    data: {
+      labels: cats,
+      datasets: [{ data: catAvgs, backgroundColor: CHART_COLORS.slice(0, cats.length), borderWidth: 2, borderColor: colors.bg }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { color: colors.tick, font: { size: 11 }, boxWidth: 12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt(ctx.raw)} €` } }
+      }
+    }
+  });
+
+  // Monthly bar chart
+  destroyChart('monthlyChart');
+  const yr = selYear || getYears()[getYears().length-1];
+  const monthlyData = Array.from({length:12}, (_,i) => {
+    const m = i+1;
+    const filtered = data.filter(d => d.year === yr && d.month === m && (!selProduct || d.product === selProduct));
+    return avg(filtered.map(d => d.price));
+  });
+  const ctx3 = document.getElementById('monthlyChart').getContext('2d');
+  charts['monthlyChart'] = new Chart(ctx3, {
+    type: 'bar',
+    data: {
+      labels: MONTHS,
+      datasets: [{
+        label: `${selProduct || 'Media'} ${yr}`,
+        data: monthlyData,
+        backgroundColor: monthlyData.map(v => v === Math.max(...monthlyData.filter(Boolean)) ? '#da7101' : 'rgba(1,105,111,0.65)'),
+        borderRadius: 5,
+        borderSkipped: false,
+      }]
+    },
+    options: baseChartOptions(colors, '€')
+  });
+}
+
+// =================== TRENDS ===================
+function renderTrends() {
+  populateAllSelects();
+  renderTrendCharts();
+}
+
+function renderTrendCharts() {
+  const selProduct = document.getElementById('trend-product')?.value;
+  const yearFrom = parseInt(document.getElementById('trend-year-from')?.value) || null;
+  const yearTo = parseInt(document.getElementById('trend-year-to')?.value) || null;
+  let years = getYears();
+  if (yearFrom) years = years.filter(y => y >= yearFrom);
+  if (yearTo) years = years.filter(y => y <= yearTo);
+
+  const filtered = data.filter(d => {
+    let ok = true;
+    if (selProduct) ok = ok && d.product === selProduct;
+    if (yearFrom) ok = ok && d.year >= yearFrom;
+    if (yearTo) ok = ok && d.year <= yearTo;
+    return ok;
+  });
+
+  const prices = filtered.map(d => d.price);
+  const avgAll = avg(prices);
+  const maxAll = prices.length ? Math.max(...prices) : 0;
+  const minAll = prices.length ? Math.min(...prices) : 0;
+
+  const yearAvgs = years.map(y => avg(filtered.filter(d => d.year === y).map(d => d.price)));
+  const varPct = yearAvgs.map((v, i) => i === 0 ? 0 : yearAvgs[i-1] ? ((v - yearAvgs[i-1]) / yearAvgs[i-1]) * 100 : 0);
+
+  // Trend KPIs
+  const trend = yearAvgs.length >= 2 ? yearAvgs[yearAvgs.length-1] - yearAvgs[0] : 0;
+  document.getElementById('trend-kpis').innerHTML = `
+    <div class="kpi-card"><div class="kpi-label">Precio medio período</div><div class="kpi-value">${fmt(avgAll)} €</div></div>
+    <div class="kpi-card"><div class="kpi-label">Precio máximo</div><div class="kpi-value">${fmt(maxAll)} €</div></div>
+    <div class="kpi-card"><div class="kpi-label">Precio mínimo</div><div class="kpi-value">${fmt(minAll)} €</div></div>
+    <div class="kpi-card"><div class="kpi-label">Tendencia general</div><div class="kpi-value">${trend >= 0 ? '+' : ''}${fmt(trend)} €</div><div class="kpi-delta ${trend >= 0 ? 'delta-up' : 'delta-down'}">${trend >= 0 ? '▲ Alza' : '▼ Baja'}</div></div>
+  `;
+
+  const colors = getChartColors();
+
+  // Main trend chart
+  destroyChart('trendMainChart');
+  // Build monthly series
+  const allPoints = [];
+  for (const y of years) {
+    for (let m = 1; m <= 12; m++) {
+      const pts = filtered.filter(d => d.year === y && d.month === m).map(d => d.price);
+      if (pts.length) allPoints.push({ label: `${MONTHS[m-1]} ${y}`, value: avg(pts) });
+    }
+  }
+  const ctx = document.getElementById('trendMainChart').getContext('2d');
+  charts['trendMainChart'] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: allPoints.map(p => p.label),
+      datasets: [{
+        label: selProduct || 'Precio medio',
+        data: allPoints.map(p => p.value),
+        borderColor: '#01696f', backgroundColor: 'rgba(1,105,111,0.07)',
+        borderWidth: 2, tension: 0.35, fill: true, pointRadius: 2
+      }]
+    },
+    options: { ...baseChartOptions(colors, '€'), plugins: { ...baseChartOptions(colors, '€').plugins, tooltip: { callbacks: { label: ctx => ` ${fmt(ctx.raw)} €` } } } }
+  });
+
+  // Min/max bar chart
+  destroyChart('trendMinMaxChart');
+  const maxPerYear = years.map(y => { const pts = filtered.filter(d => d.year === y).map(d => d.price); return pts.length ? Math.max(...pts) : 0; });
+  const minPerYear = years.map(y => { const pts = filtered.filter(d => d.year === y).map(d => d.price); return pts.length ? Math.min(...pts) : 0; });
+  const ctx2 = document.getElementById('trendMinMaxChart').getContext('2d');
+  charts['trendMinMaxChart'] = new Chart(ctx2, {
+    type: 'bar',
+    data: {
+      labels: years,
+      datasets: [
+        { label: 'Máximo', data: maxPerYear, backgroundColor: 'rgba(218,113,1,0.7)', borderRadius: 4 },
+        { label: 'Mínimo', data: minPerYear, backgroundColor: 'rgba(1,105,111,0.5)', borderRadius: 4 },
+      ]
+    },
+    options: baseChartOptions(colors, '€')
+  });
+
+  // Variation % chart
+  destroyChart('trendVarChart');
+  const ctx3 = document.getElementById('trendVarChart').getContext('2d');
+  charts['trendVarChart'] = new Chart(ctx3, {
+    type: 'bar',
+    data: {
+      labels: years.slice(1),
+      datasets: [{
+        label: 'Variación %',
+        data: varPct.slice(1),
+        backgroundColor: varPct.slice(1).map(v => v >= 0 ? 'rgba(67,122,34,0.7)' : 'rgba(161,44,123,0.7)'),
+        borderRadius: 4,
+      }]
+    },
+    options: baseChartOptions(colors, '%')
+  });
+}
+
+// =================== COMPARE ===================
+function renderComparePage() {
+  populateAllSelects();
+  selectedYears = [];
+  renderYearCards();
+}
+
+function renderYearCards() {
+  const years = getYears();
+  document.getElementById('cmp-year-cards').innerHTML = years.map(y => `
+    <div class="compare-year-card ${selectedYears.includes(y) ? 'selected' : ''}" onclick="toggleYear(${y})">
+      <div class="yr">${y}</div>
+      <div class="avg">${fmt(avg(data.filter(d=>d.year===y).map(d=>d.price)))} € media</div>
+    </div>
+  `).join('');
+}
+
+function toggleYear(y) {
+  const i = selectedYears.indexOf(y);
+  if (i > -1) selectedYears.splice(i, 1);
+  else selectedYears.push(y);
+  renderYearCards();
+  renderCompare();
+}
+
+function renderCompare() {
+  const selProduct = document.getElementById('cmp-product')?.value;
+  const chartCard = document.getElementById('compare-chart-card');
+  const tableCard = document.getElementById('compare-table-card');
+
+  if (selectedYears.length < 2) {
+    chartCard.style.display = 'none';
+    tableCard.style.display = 'none';
+    return;
+  }
+  chartCard.style.display = '';
+  tableCard.style.display = '';
+
+  const colors = getChartColors();
+  destroyChart('compareChart');
+  const datasets = selectedYears.sort().map((y, i) => {
+    const monthData = Array.from({length:12}, (_,mi) => {
+      const pts = data.filter(d => d.year === y && d.month === mi+1 && (!selProduct || d.product === selProduct)).map(d => d.price);
+      return avg(pts) || null;
+    });
+    return { label: String(y), data: monthData, borderColor: CHART_COLORS[i % CHART_COLORS.length], backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '15', borderWidth: 2, tension: 0.35, fill: false, pointRadius: 4 };
+  });
+
+  const ctx = document.getElementById('compareChart').getContext('2d');
+  charts['compareChart'] = new Chart(ctx, {
+    type: 'line',
+    data: { labels: MONTHS, datasets },
+    options: { ...baseChartOptions(colors, '€'), plugins: { legend: { display: true, labels: { color: colors.tick, font:{size:12} } } } }
+  });
+
+  // Stats table
+  const thead = `<thead><tr><th>Año</th><th>Media</th><th>Máximo</th><th>Mínimo</th><th>Variación vs. anterior</th></tr></thead>`;
+  let prevAvg = null;
+  const rows = selectedYears.sort().map(y => {
+    const pts = data.filter(d => d.year === y && (!selProduct || d.product === selProduct)).map(d => d.price);
+    const a = avg(pts); const mx = Math.max(...pts); const mn = Math.min(...pts);
+    const pct = prevAvg ? ((a - prevAvg) / prevAvg) * 100 : null;
+    prevAvg = a;
+    return `<tr>
+      <td><strong>${y}</strong></td>
+      <td>${fmt(a)} €</td><td>${fmt(mx)} €</td><td>${fmt(mn)} €</td>
+      <td>${pct !== null ? `<span class="badge ${pct >= 0 ? 'badge-up':'badge-down'}">${fmtPct(pct)}</span>` : '—'}</td>
+    </tr>`;
+  });
+  document.getElementById('compare-stats-table').innerHTML = thead + `<tbody>${rows.join('')}</tbody>`;
+}
+
+// =================== TABLE ===================
+function renderTable() {
+  const search = document.getElementById('table-search')?.value.toLowerCase() || '';
+  const yearF = parseInt(document.getElementById('table-year-filter')?.value) || null;
+  const catF = document.getElementById('table-cat-filter')?.value || '';
+
+  let rows = data.filter(d => {
+    let ok = true;
+    if (search) ok = ok && (d.product.toLowerCase().includes(search) || d.category.toLowerCase().includes(search));
+    if (yearF) ok = ok && d.year === yearF;
+    if (catF) ok = ok && d.category === catF;
+    return ok;
+  });
+
+  // Sort by year desc, month asc
+  rows = rows.sort((a,b) => b.year - a.year || a.month - b.month);
+
+  const tbody = document.getElementById('table-body');
+  if (rows.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: var(--space-10); color: var(--color-text-muted)">No se encontraron registros</td></tr>`;
+  } else {
+    // Compute deltas per product/year/month
+    tbody.innerHTML = rows.slice(0, 200).map(d => {
+      const prevY = data.find(r => r.product === d.product && r.year === d.year - 1 && r.month === d.month);
+      let delta = '', badgeCls = 'badge-flat';
+      if (prevY) {
+        const pct = ((d.price - prevY.price) / prevY.price) * 100;
+        delta = fmtPct(pct);
+        badgeCls = pct > 0.5 ? 'badge-up' : pct < -0.5 ? 'badge-down' : 'badge-flat';
+      }
+      return `<tr>
+        <td><strong>${d.product}</strong></td>
+        <td>${d.category}</td>
+        <td>${d.year}</td>
+        <td>${d.month ? MONTH_NAMES[d.month-1] : '—'}</td>
+        <td style="font-variant-numeric: tabular-nums">${fmt(d.price)} €</td>
+        <td>${d.unit}</td>
+        <td>${delta ? `<span class="badge ${badgeCls}">${delta}</span>` : '—'}</td>
+        <td><button onclick="deleteRecord(${d.id})" title="Eliminar">✕</button></td>
+      </tr>`;
+    }).join('');
+  }
+  document.getElementById('table-count').textContent = `Mostrando ${Math.min(rows.length, 200)} de ${rows.length} registros`;
+}
+
+function deleteRecord(id) {
+  data = data.filter(d => d.id !== id);
+  renderTable();
+  showToast('Registro eliminado');
+}
+
+// =================== SEARCH ===================
+function initSearch() {
+  populateAllSelects();
+}
+
+function doSearch() {
+  const product = document.getElementById('search-product').value;
+  const year = parseInt(document.getElementById('search-year').value) || null;
+  const month = parseInt(document.getElementById('search-month').value) || null;
+
+  let results = data.filter(d => {
+    let ok = true;
+    if (product) ok = ok && d.product === product;
+    if (year) ok = ok && d.year === year;
+    if (month) ok = ok && d.month === month;
+    return ok;
+  });
+
+  const container = document.getElementById('search-results');
+  if (!results.length) {
+    container.innerHTML = `<div class="card"><div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><h3>Sin resultados</h3><p>Prueba con otros filtros de búsqueda</p></div></div>`;
+    return;
+  }
+
+  const avgPrice = avg(results.map(d => d.price));
+  const maxPrice = Math.max(...results.map(d => d.price));
+  const minPrice = Math.min(...results.map(d => d.price));
+
+  container.innerHTML = `
+    <div class="grid-3" style="margin-bottom: var(--space-6)">
+      <div class="kpi-card"><div class="kpi-label">Precio medio</div><div class="kpi-value">${fmt(avgPrice)} €</div></div>
+      <div class="kpi-card"><div class="kpi-label">Precio máximo</div><div class="kpi-value">${fmt(maxPrice)} €</div></div>
+      <div class="kpi-card"><div class="kpi-label">Precio mínimo</div><div class="kpi-value">${fmt(minPrice)} €</div></div>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>Producto</th><th>Categoría</th><th>Año</th><th>Mes</th><th>Precio</th><th>Unidad</th><th>Notas</th></tr></thead>
+        <tbody>
+          ${results.sort((a,b) => b.year-a.year || a.month-b.month).slice(0, 100).map(d => `
+            <tr>
+              <td><strong>${d.product}</strong></td>
+              <td>${d.category}</td>
+              <td>${d.year}</td>
+              <td>${d.month ? MONTH_NAMES[d.month-1] : '—'}</td>
+              <td style="font-variant-numeric:tabular-nums">${fmt(d.price)} €</td>
+              <td>${d.unit}</td>
+              <td style="color:var(--color-text-muted)">${d.notes || '—'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-3)">${results.length} resultados encontrados</p>
+  `;
+}
+
+// =================== ADD RECORD ===================
+function openAddModal() { document.getElementById('add-modal').classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function openImportModal() { document.getElementById('import-modal').classList.add('open'); }
+
+function addRecord() {
+  const product = document.getElementById('m-product').value.trim();
+  const category = document.getElementById('m-category').value.trim() || 'Sin categoría';
+  const price = parseFloat(document.getElementById('m-price').value);
+  const unit = document.getElementById('m-unit').value.trim() || '€/ud';
+  const year = parseInt(document.getElementById('m-year').value);
+  const month = parseInt(document.getElementById('m-month').value) || null;
+  const notes = document.getElementById('m-notes').value.trim();
+
+  if (!product || isNaN(price) || isNaN(year)) {
+    showToast('⚠ Rellena producto, precio y año'); return;
+  }
+  const maxId = data.length ? Math.max(...data.map(d => d.id)) : 0;
+  data.push({ id: maxId + 1, product, category, price, unit, year, month, notes });
+  closeModal('add-modal');
+  populateAllSelects();
+  showToast('✓ Registro añadido');
+  ['m-product','m-category','m-price','m-unit','m-year','m-notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('m-month').value = '';
+}
+
+// =================== EXPORT / IMPORT ===================
+function exportCSV() {
+  const headers = 'producto,categoria,precio,unidad,año,mes,notas';
+  const rows = data.map(d => `${d.product},${d.category},${d.price},${d.unit},${d.year},${d.month||''},${d.notes||''}`);
+  const csv = [headers, ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'precios.csv';
+  a.click();
+  showToast('✓ CSV exportado');
+}
+
+function importCSV() {
+  const raw = document.getElementById('csv-input').value.trim();
+  if (!raw) { showToast('⚠ Pega datos CSV primero'); return; }
+  const lines = raw.split('\n').filter(l => l.trim());
+  let imported = 0, maxId = data.length ? Math.max(...data.map(d => d.id)) : 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || i === 0 && line.toLowerCase().startsWith('producto')) continue;
+    const parts = line.split(',');
+    if (parts.length < 5) continue;
+    const [product, category, price, unit, year, month, ...rest] = parts;
+    const p = parseFloat(price), y = parseInt(year);
+    if (!product || isNaN(p) || isNaN(y)) continue;
+    data.push({ id: ++maxId, product: product.trim(), category: (category||'').trim() || 'Sin categoría', price: p, unit: (unit||'€/ud').trim(), year: y, month: parseInt(month)||null, notes: rest.join(',').trim() });
+    imported++;
+  }
+  closeModal('import-modal');
+  populateAllSelects();
+  showToast(`✓ ${imported} registros importados`);
+  document.getElementById('csv-input').value = '';
+}
+
+// =================== CHART BASE OPTIONS ===================
+function baseChartOptions(colors, unit) {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${fmt(ctx.raw)} ${unit}` } }
+    },
+    scales: {
+      x: { grid: { color: colors.grid }, ticks: { color: colors.tick, font: { size: 11 } } },
+      y: { grid: { color: colors.grid }, ticks: { color: colors.tick, font: { size: 11 }, callback: v => `${v} ${unit}` } }
+    }
+  };
+}
+
+// =================== THEME TOGGLE ===================
+(function(){
+  const t = document.querySelector('[data-theme-toggle]');
+  const r = document.documentElement;
+  let d = matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light';
+  r.setAttribute('data-theme', d);
+  t && t.addEventListener('click', () => {
+    d = d === 'dark' ? 'light' : 'dark';
+    r.setAttribute('data-theme', d);
+    // Re-render visible charts
+    setTimeout(() => {
+      const activePage = document.querySelector('.page.active')?.id;
+      if (activePage === 'page-dashboard') renderDashCharts();
+      if (activePage === 'page-tendencias') renderTrendCharts();
+      if (activePage === 'page-comparar') renderCompare();
+    }, 50);
+  });
+})();
+
+
+// =================== SUPABASE READY LAYER ===================
+let supabaseClient = null;
+async function initSupabase() {
+  const cfg = window.SUPABASE_CONFIG || {};
+  if (!cfg.url || !cfg.anonKey || cfg.url.includes('REPLACE_WITH')) return false;
+  try {
+    supabaseClient = window.supabase.createClient(cfg.url, cfg.anonKey);
+    return true;
+  } catch (e) {
+    console.warn('Supabase init failed', e);
+    return false;
+  }
+}
+
+async function loadFromSupabase() {
+  if (!supabaseClient) return false;
+  const { data, error } = await supabaseClient.from(window.SUPABASE_CONFIG.table || 'precios').select('*').order('created_at', { ascending: false }).limit(5000);
+  if (error || !data) return false;
+  data.forEach((row, i) => {
+    const product = row.producto || row.product || '';
+    const category = row.categoria || row.category || 'Sin categoría';
+    const price = Number(row.precio ?? row.price ?? 0);
+    const unit = row.unidad || row.unit || '€/ud';
+    const year = Number(row.ano ?? row.year ?? new Date(row.created_at || Date.now()).getFullYear());
+    const month = Number(row.mes ?? row.month ?? new Date(row.created_at || Date.now()).getMonth() + 1);
+    const notes = row.notas || row.notes || '';
+    if (product && !isNaN(price) && !isNaN(year)) {
+      data[i] = { id: row.id || i + 1, product, category, price, unit, year, month, notes };
+    }
+  });
+  return true;
+}
+
+function getHistoryFiltered() {
+  const q = (document.getElementById('history-search')?.value || '').toLowerCase();
+  const year = parseInt(document.getElementById('history-year')?.value || '') || null;
+  const cat = document.getElementById('history-category')?.value || '';
+  let rows = data.filter(r => {
+    let ok = true;
+    if (q) ok = ok && r.product.toLowerCase().includes(q);
+    if (year) ok = ok && r.year === year;
+    if (cat) ok = ok && r.category === cat;
+    return ok;
+  });
+  rows = rows.sort((a,b) => {
+    const d = (a.year - b.year) || (a.month - b.month);
+    return (document.getElementById('history-sort')?.value || 'desc') === 'asc' ? d : -d;
+  });
+  return rows;
+}
+
+function renderHistoryFilters() {
+  const years = getYears();
+  const cats = getCategories();
+  const yearSel = document.getElementById('history-year');
+  const catSel = document.getElementById('history-category');
+  if (yearSel) yearSel.innerHTML = `<option value="">Todos los años</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('');
+  if (catSel) catSel.innerHTML = `<option value="">Todas las categorías</option>` + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+}
+
+function renderHistoryView() {
+  renderHistoryFilters();
+  const rows = getHistoryFiltered();
+  const historyList = document.getElementById('historyList');
+  const historySummary = document.getElementById('historySummary');
+  const chartColors = getChartColors();
+  destroyChart('historyChart');
+
+  if (!rows.length) {
+    if (historyList) historyList.innerHTML = '<div class="empty-state"><h3>Sin registros</h3><p>No hay datos para esos filtros.</p></div>';
+    if (historySummary) historySummary.innerHTML = '<div class="empty-state"><h3>Sin resumen</h3><p>Selecciona otro producto o quita filtros.</p></div>';
+    return;
+  }
+
+  const grouped = Object.values(rows.reduce((acc, r) => {
+    const key = r.product;
+    if (!acc[key]) acc[key] = { product: key, category: r.category, items: [] };
+    acc[key].items.push(r);
+    return acc;
+  }, {}));
+
+  const top = grouped[0];
+  const prices = top.items.map(x => x.price);
+  const first = top.items[0];
+  const last = top.items[top.items.length - 1];
+  const delta = first && last ? ((last.price - first.price) / first.price) * 100 : 0;
+  if (historySummary) {
+    historySummary.innerHTML = `
+      <div class="kpi-card"><div class="kpi-label">Producto</div><div class="kpi-value" style="font-size:1rem">${top.product}</div><div class="kpi-delta delta-flat">${top.category}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Primer precio</div><div class="kpi-value">${fmt(first.price)} €</div></div>
+      <div class="kpi-card"><div class="kpi-label">Último precio</div><div class="kpi-value">${fmt(last.price)} €</div><div class="kpi-delta ${delta >= 0 ? 'delta-up' : 'delta-down'}">${fmtPct(delta)}</div></div>
+      <div class="kpi-card"><div class="kpi-label">Máximo</div><div class="kpi-value">${fmt(Math.max(...prices))} €</div></div>
+      <div class="kpi-card"><div class="kpi-label">Mínimo</div><div class="kpi-value">${fmt(Math.min(...prices))} €</div></div>
+    `;
+  }
+
+  const ctx = document.getElementById('historyChart')?.getContext('2d');
+  if (ctx) {
+    charts['historyChart'] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: top.items.map(x => `${MONTHS[(x.month||1)-1]} ${x.year}`),
+        datasets: [{
+          label: top.product,
+          data: top.items.map(x => x.price),
+          borderColor: '#01696f',
+          backgroundColor: 'rgba(1,105,111,0.08)',
+          borderWidth: 2,
+          tension: 0.3,
+          pointRadius: 3,
+          fill: true
+        }]
+      },
+      options: baseChartOptions(chartColors, '€')
+    });
+  }
+
+  if (historyList) {
+    historyList.innerHTML = grouped.map(g => {
+      const vals = g.items.map(x => x.price);
+      const deltaG = g.items.length > 1 ? ((g.items[g.items.length - 1].price - g.items[0].price) / g.items[0].price) * 100 : 0;
+      return `
+        <div class="history-item">
+          <h4>${g.product}</h4>
+          <div class="meta"><span>${g.category}</span><span>${g.items.length} registros</span><span>${g.items[0].year} → ${g.items[g.items.length - 1].year}</span></div>
+          <div class="value">${fmt(g.items[g.items.length - 1].price)} €</div>
+          <div class="evolution-pill ${deltaG >= 0 ? 'evo-up' : 'evo-down'}">${deltaG >= 0 ? '▲' : '▼'} ${fmtPct(deltaG)}</div>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
+// =================== INIT ===================
+seedData();
+populateAllSelects();
+initSupabase().then(async ok => {
+  if (ok) {
+    const loaded = await loadFromSupabase();
+    if (loaded) { populateAllSelects(); renderDashboard(); renderHistoryView(); } else { renderDashboard(); renderHistoryView(); }
+  } else { renderDashboard(); renderHistoryView(); }
+});
+</script>
+</body>
+</html>
