@@ -837,7 +837,11 @@ function closeModal(id) {
   document.getElementById(id).classList.remove('open')
   document.body.style.overflow = ''
   if (id === 'import-modal') {
+    importData = null
     document.getElementById('column-mapping').style.display = 'none'
+    document.getElementById('preview-section').style.display = 'none'
+    document.getElementById('file-name').textContent = ''
+    document.getElementById('file-input').value = ''
   }
 }
 function openImportModal() { document.getElementById('import-modal').classList.add('open'); document.body.style.overflow = 'hidden' }
@@ -896,6 +900,8 @@ const COLUMN_AUTO_MAP = {
   notas: ['notas', 'notes', 'observaciones', 'comentario', 'comentarios']
 }
 
+let importData = null
+
 function detectDelimiter(line) {
   const commaCount = (line.match(/,/g) || []).length
   const tabCount = (line.match(/\t/g) || []).length
@@ -929,6 +935,68 @@ function extractMonth(val) {
   const m = s.match(/^(\d{2})\/(\d{2})/)
   return m ? parseInt(m[2]) : null
 }
+
+async function decodeText(buf) {
+  let text = new TextDecoder('utf-8', { fatal: false }).decode(buf)
+  if (text.includes('\uFFFD')) {
+    text = new TextDecoder('windows-1252').decode(buf)
+  }
+  return text
+}
+
+async function handleFileSelect(e) {
+  const file = e.target.files[0]
+  if (!file) return
+  document.getElementById('file-name').textContent = file.name
+  document.getElementById('column-mapping').style.display = 'none'
+  document.getElementById('preview-section').style.display = 'none'
+
+  const ext = file.name.split('.').pop().toLowerCase()
+  let headers = [], rows = [], delimiter = ','
+
+  try {
+    if (['xlsx', 'xls'].includes(ext) && typeof XLSX !== 'undefined') {
+      const buf = await file.arrayBuffer()
+      const wb = XLSX.read(buf, { type: 'array' })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+      if (data.length < 2) { showToast('⚠ El archivo no tiene datos'); return }
+      headers = data[0].map(h => String(h).trim())
+      rows = data.slice(1)
+        .filter(r => r.some(c => String(c).trim()))
+        .map(r => { while (r.length < headers.length) r.push(''); return r.map(c => String(c).trim()) })
+    } else {
+      const buf = await file.arrayBuffer()
+      const text = await decodeText(buf)
+      const lines = text.split('\n').filter(l => l.trim())
+      if (lines.length < 2) { showToast('⚠ El archivo no tiene datos'); return }
+      delimiter = detectDelimiter(lines[0])
+      headers = lines[0].split(delimiter).map(h => h.trim())
+      rows = lines.slice(1).map(l => {
+        const parts = l.split(delimiter).map(c => c.trim())
+        while (parts.length < headers.length) parts.push('')
+        return parts
+      })
+    }
+  } catch (err) {
+    console.error(err)
+    showToast('⚠ Error al leer el archivo')
+    return
+  }
+
+  importData = { headers, rows, delimiter }
+  showPreview(importData)
+
+  const map = buildMapping(headers)
+  applyMappingToUI(map, headers)
+
+  if (map.product !== null && map.price !== null) {
+    await executeImport()
+    return
+  }
+  document.getElementById('column-mapping').style.display = 'block'
+}
+window.handleFileSelect = handleFileSelect
 
 function buildMapping(headers) {
   const fieldIds = ['product', 'category', 'price', 'unit', 'year', 'month', 'notes']
@@ -968,36 +1036,23 @@ function applyMappingToUI(map, headers) {
   })
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('file-input').addEventListener('change', function(e) {
-    const file = e.target.files[0]
-    if (!file) return
-    document.getElementById('file-name').textContent = file.name
-    const reader = new FileReader()
-    reader.onload = async function(ev) {
-      const content = ev.target.result
-      document.getElementById('csv-input').value = content
-      const lines = content.trim().split('\n').filter(l => l.trim())
-      if (lines.length > 0 && !lines[0].toLowerCase().startsWith('producto')) {
-        const headers = lines[0].split(detectDelimiter(lines[0])).map(h => h.trim())
-        const map = buildMapping(headers)
-        applyMappingToUI(map, headers)
-        if (map.product !== null && map.price !== null) {
-          document.getElementById('column-mapping').style.display = 'none'
-          await executeImport(content)
-          return
-        }
-        document.getElementById('column-mapping').style.display = 'block'
-      }
-    }
-    reader.readAsText(file)
-  })
-})
+function showPreview(data) {
+  const maxRows = Math.min(5, data.rows.length)
+  const thead = `<thead><tr>${data.headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>`
+  const tbody = `<tbody>${data.rows.slice(0, maxRows).map(r =>
+    `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`
+  ).join('')}</tbody>`
+  document.getElementById('preview-table').innerHTML = thead + tbody
+  document.getElementById('preview-info').textContent = `${data.rows.length} filas · ${data.headers.length} columnas`
+  document.getElementById('preview-section').style.display = 'block'
+}
 
-async function executeImport(raw) {
-  const lines = raw.trim().split('\n').filter(l => l.trim())
-  const delimiter = detectDelimiter(lines[0] || '')
-  const isStandard = lines[0]?.toLowerCase().startsWith('producto')
+async function executeImport() {
+  if (!importData || !importData.rows.length) {
+    showToast('⚠ No hay datos para importar')
+    return
+  }
+  const { headers, rows, delimiter } = importData
 
   let hasMapping = false
   const map = {}
@@ -1008,29 +1063,26 @@ async function executeImport(raw) {
   })
 
   const records = []
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
-    if (!line || (i === 0 && isStandard)) continue
-    const parts = line.split(delimiter)
+  for (const row of rows) {
     let product = '', category = 'Sin categoría', price = NaN, unit = '€/ud', year = NaN, month = null, notes = ''
 
     if (hasMapping) {
-      if (map.product !== null) product = (parts[map.product]||'').trim()
-      if (map.category !== null) category = (parts[map.category]||'').trim() || 'Sin categoría'
-      price = map.price !== null ? parseNumber(parts[map.price]) : NaN
-      if (map.unit !== null) unit = (parts[map.unit]||'').trim() || '€/ud'
-      year = map.year !== null ? extractYear(parts[map.year]) : NaN
-      month = map.month !== null ? extractMonth(parts[map.month]) : null
-      if (map.notes !== null) notes = (parts[map.notes]||'').trim()
+      if (map.product !== null) product = row[map.product] || ''
+      if (map.category !== null) category = row[map.category] || 'Sin categoría'
+      price = map.price !== null ? parseNumber(row[map.price]) : NaN
+      if (map.unit !== null) unit = row[map.unit] || '€/ud'
+      year = map.year !== null ? extractYear(row[map.year]) : NaN
+      month = map.month !== null ? extractMonth(row[map.month]) : null
+      if (map.notes !== null) notes = row[map.notes] || ''
     } else {
-      if (parts.length < 5) continue
-      product = parts[0].trim()
-      category = (parts[1]||'').trim() || 'Sin categoría'
-      price = parseNumber(parts[2])
-      unit = (parts[3]||'€/ud').trim()
-      year = extractYear(parts[4])
-      month = extractMonth(parts[5])
-      notes = parts.slice(6).join(delimiter).trim()
+      if (row.length < 5) continue
+      product = row[0]
+      category = row[1] || 'Sin categoría'
+      price = parseNumber(row[2])
+      unit = row[3] || '€/ud'
+      year = extractYear(row[4])
+      month = extractMonth(row[5])
+      notes = row.slice(6).join(delimiter).trim()
     }
 
     if (!product || isNaN(price) || isNaN(year)) continue
@@ -1043,9 +1095,6 @@ async function executeImport(raw) {
     closeModal('import-modal')
     populateAllSelects()
     showToast(`✓ ${saved.length} registros importados`)
-    document.getElementById('csv-input').value = ''
-    document.getElementById('file-name').textContent = ''
-    document.getElementById('file-input').value = ''
   } catch (e) {
     console.error(e)
     showToast('⚠ Error al importar')
@@ -1053,27 +1102,23 @@ async function executeImport(raw) {
 }
 
 async function importCSV() {
-  const raw = document.getElementById('csv-input').value.trim()
-  if (!raw) { showToast('⚠ Pega datos CSV primero'); return }
-  const lines = raw.trim().split('\n').filter(l => l.trim())
-  const delimiter = detectDelimiter(lines[0] || '')
-  const isStandard = lines[0]?.toLowerCase().startsWith('producto')
-  const mappingEl = document.getElementById('column-mapping')
-
-  if (!isStandard && mappingEl.style.display !== 'block') {
-    const headers = lines[0].split(delimiter).map(h => h.trim())
-    const map = buildMapping(headers)
-    applyMappingToUI(map, headers)
-    if (map.product !== null && map.price !== null) {
-      await executeImport(raw)
-      return
-    }
-    mappingEl.style.display = 'block'
-    showToast('⚠ Asigna las columnas y pulsa Importar de nuevo')
+  if (!importData) {
+    showToast('⚠ Selecciona un archivo primero')
     return
   }
-
-  await executeImport(raw)
+  const mappingEl = document.getElementById('column-mapping')
+  if (mappingEl.style.display === 'block') {
+    await executeImport()
+    return
+  }
+  const map = buildMapping(importData.headers)
+  applyMappingToUI(map, importData.headers)
+  if (map.product !== null && map.price !== null) {
+    await executeImport()
+    return
+  }
+  mappingEl.style.display = 'block'
+  showToast('⚠ Asigna las columnas y pulsa Importar de nuevo')
 }
 window.importCSV = importCSV
 
