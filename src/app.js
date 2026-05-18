@@ -832,12 +832,15 @@ function doSearch() {
 window.doSearch = doSearch
 
 // =================== ADD RECORD ===================
-function openAddModal() { document.getElementById('add-modal').classList.add('open') }
+function openAddModal() { document.getElementById('add-modal').classList.add('open'); document.body.style.overflow = 'hidden' }
 function closeModal(id) {
   document.getElementById(id).classList.remove('open')
-  if (id === 'import-modal') document.getElementById('column-mapping').style.display = 'none'
+  document.body.style.overflow = ''
+  if (id === 'import-modal') {
+    document.getElementById('column-mapping').style.display = 'none'
+  }
 }
-function openImportModal() { document.getElementById('import-modal').classList.add('open') }
+function openImportModal() { document.getElementById('import-modal').classList.add('open'); document.body.style.overflow = 'hidden' }
 window.openAddModal = openAddModal
 window.closeModal = closeModal
 window.openImportModal = openImportModal
