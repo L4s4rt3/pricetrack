@@ -930,37 +930,63 @@ function extractMonth(val) {
   return m ? parseInt(m[2]) : null
 }
 
-function setupMapping(headers) {
+function buildMapping(headers) {
   const fieldIds = ['product', 'category', 'price', 'unit', 'year', 'month', 'notes']
   const fieldNames = ['producto', 'categoria', 'precio', 'unidad', 'año', 'mes', 'notas']
+  const map = {}
   fieldNames.forEach((name, i) => {
-    const select = document.getElementById(`map-${fieldIds[i]}`)
-    select.innerHTML = '<option value="">-- No importar --</option>'
-    headers.forEach((h, idx) => {
-      select.innerHTML += `<option value="${idx}">${h}</option>`
-    })
+    const id = fieldIds[i]
     const synonyms = COLUMN_AUTO_MAP[name] || []
     const matchIdx = headers.findIndex(h => {
       const hlow = h.toLowerCase().trim()
       return synonyms.some(s => hlow === s.toLowerCase() || hlow.includes(s.toLowerCase()))
     })
-    if (matchIdx >= 0) select.value = String(matchIdx)
+    map[id] = matchIdx >= 0 ? matchIdx : null
+  })
+  if (map.year === null || map.month === null) {
+    const dateIdx = headers.findIndex(h => {
+      const hlow = h.toLowerCase().trim()
+      return ['fecha', 'date', 'fecha fra.', 'fechafra', 'fecha_fra'].some(s => hlow === s || hlow.includes(s))
+    })
+    if (dateIdx >= 0) {
+      if (map.year === null) map.year = dateIdx
+      if (map.month === null) map.month = dateIdx
+    }
+  }
+  return map
+}
+
+function applyMappingToUI(map, headers) {
+  const ids = ['product', 'category', 'price', 'unit', 'year', 'month', 'notes']
+  ids.forEach(id => {
+    const select = document.getElementById(`map-${id}`)
+    select.innerHTML = '<option value="">-- No importar --</option>'
+    headers.forEach((h, idx) => {
+      select.innerHTML += `<option value="${idx}">${h}</option>`
+    })
+    if (map[id] !== null) select.value = String(map[id])
   })
 }
 
-// File input handler
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('file-input').addEventListener('change', function(e) {
     const file = e.target.files[0]
     if (!file) return
     document.getElementById('file-name').textContent = file.name
     const reader = new FileReader()
-    reader.onload = function(ev) {
+    reader.onload = async function(ev) {
       const content = ev.target.result
       document.getElementById('csv-input').value = content
       const lines = content.trim().split('\n').filter(l => l.trim())
       if (lines.length > 0 && !lines[0].toLowerCase().startsWith('producto')) {
-        setupMapping(lines[0].split(detectDelimiter(lines[0])).map(h => h.trim()))
+        const headers = lines[0].split(detectDelimiter(lines[0])).map(h => h.trim())
+        const map = buildMapping(headers)
+        applyMappingToUI(map, headers)
+        if (map.product !== null && map.price !== null) {
+          document.getElementById('column-mapping').style.display = 'none'
+          await executeImport(content)
+          return
+        }
         document.getElementById('column-mapping').style.display = 'block'
       }
     }
@@ -968,30 +994,18 @@ document.addEventListener('DOMContentLoaded', () => {
   })
 })
 
-async function importCSV() {
-  const raw = document.getElementById('csv-input').value.trim()
-  if (!raw) { showToast('⚠ Pega datos CSV primero'); return }
-  const lines = raw.split('\n').filter(l => l.trim())
+async function executeImport(raw) {
+  const lines = raw.trim().split('\n').filter(l => l.trim())
   const delimiter = detectDelimiter(lines[0] || '')
-  const isStandard = lines[0].toLowerCase().startsWith('producto')
-  const mappingEl = document.getElementById('column-mapping')
-  const mappingVisible = mappingEl.style.display === 'block'
+  const isStandard = lines[0]?.toLowerCase().startsWith('producto')
 
-  if (!isStandard && !mappingVisible) {
-    const headers = lines[0].split(delimiter).map(h => h.trim())
-    setupMapping(headers)
-    mappingEl.style.display = 'block'
-    showToast('⚠ Asigna las columnas y pulsa Importar de nuevo')
-    return
-  }
-
+  let hasMapping = false
   const map = {}
-  if (mappingVisible) {
-    ;['product','category','price','unit','year','month','notes'].forEach(id => {
-      const val = document.getElementById(`map-${id}`).value
-      map[id] = val !== '' ? parseInt(val) : null
-    })
-  }
+  ;['product','category','price','unit','year','month','notes'].forEach(id => {
+    const val = document.getElementById(`map-${id}`).value
+    if (val && val !== '') { map[id] = parseInt(val); hasMapping = true }
+    else map[id] = null
+  })
 
   const records = []
   for (let i = 0; i < lines.length; i++) {
@@ -1000,7 +1014,7 @@ async function importCSV() {
     const parts = line.split(delimiter)
     let product = '', category = 'Sin categoría', price = NaN, unit = '€/ud', year = NaN, month = null, notes = ''
 
-    if (mappingVisible) {
+    if (hasMapping) {
       if (map.product !== null) product = (parts[map.product]||'').trim()
       if (map.category !== null) category = (parts[map.category]||'').trim() || 'Sin categoría'
       price = map.price !== null ? parseNumber(parts[map.price]) : NaN
@@ -1036,6 +1050,30 @@ async function importCSV() {
     console.error(e)
     showToast('⚠ Error al importar')
   }
+}
+
+async function importCSV() {
+  const raw = document.getElementById('csv-input').value.trim()
+  if (!raw) { showToast('⚠ Pega datos CSV primero'); return }
+  const lines = raw.trim().split('\n').filter(l => l.trim())
+  const delimiter = detectDelimiter(lines[0] || '')
+  const isStandard = lines[0]?.toLowerCase().startsWith('producto')
+  const mappingEl = document.getElementById('column-mapping')
+
+  if (!isStandard && mappingEl.style.display !== 'block') {
+    const headers = lines[0].split(delimiter).map(h => h.trim())
+    const map = buildMapping(headers)
+    applyMappingToUI(map, headers)
+    if (map.product !== null && map.price !== null) {
+      await executeImport(raw)
+      return
+    }
+    mappingEl.style.display = 'block'
+    showToast('⚠ Asigna las columnas y pulsa Importar de nuevo')
+    return
+  }
+
+  await executeImport(raw)
 }
 window.importCSV = importCSV
 
