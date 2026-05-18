@@ -1,164 +1,240 @@
-import { fetchAllRecords, addRecord as dbAddRecord, addRecords as dbAddRecords, deleteRecord as dbDeleteRecord, subscribeToChanges, normalizeRow } from './database.js'
+import {
+  fetchAllRecords, addRecord as dbAddRecord, addRecords as dbAddRecords,
+  deleteRecord as dbDeleteRecord, subscribeToChanges, normalizeRow
+} from './database.js'
 
+// =========== GLOBALS ===========
 let data = []
 let charts = {}
 let selectedYears = []
+let ventasPage = 0
+let ventasPageSize = 50
+let clienteSelected = null
 
-const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+const MONTHS      = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-const CHART_COLORS = ['#01696f','#006494','#437a22','#d19900','#da7101','#a12c7b','#964219','#5591c7']
+const CHART_COLORS = ['#01696f','#006494','#437a22','#d19900','#da7101','#a12c7b','#964219','#5591c7','#2d8650','#8b5cf6']
 
-function getUnique(field) { return [...new Set(data.map(d => d[field]))].sort() }
-function getYears() { return getUnique('year').map(Number).sort() }
+// =========== UTILITIES ===========
+function getUnique(field) { return [...new Set(data.map(d => d[field]).filter(Boolean))].sort() }
+function getYears() { return [...new Set(data.map(d => d.year))].map(Number).sort() }
 function getProducts() { return getUnique('product') }
 function getCategories() { return getUnique('category') }
-function avg(arr) { return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0 }
+function getClientes() { return [...new Set(data.map(d => d.denominacion_social || d.cliente).filter(Boolean))].sort() }
+function avg(arr) { const v = arr.filter(x => x > 0); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : 0 }
+function sum(arr) { return arr.reduce((a,b)=>a+b,0) }
 function fmt(n) { return (+n).toFixed(2) }
 function fmtPct(n) { return (n >= 0 ? '+' : '') + n.toFixed(1) + '%' }
+function fmtEur(n) {
+  return new Intl.NumberFormat('es-ES', { style:'currency', currency:'EUR', minimumFractionDigits:2 }).format(n)
+}
+function fmtKg(n) {
+  return new Intl.NumberFormat('es-ES', { minimumFractionDigits:0, maximumFractionDigits:0 }).format(n) + ' kg'
+}
+function fmtNum(n) {
+  return new Intl.NumberFormat('es-ES').format(Math.round(n))
+}
+
+function detectCategory(name) {
+  const n = (name || '').toUpperCase()
+  if (n.includes('CARACARA'))  return 'Naranja Caracara'
+  if (n.includes('NAVELINA'))  return 'Naranja Navelina'
+  if (n.includes('SALUSTIANA')) return 'Naranja Salustiana'
+  if (n.includes('NAVEL'))     return 'Naranja Navel'
+  if (n.startsWith('NAR ') || n.includes(' NAR ')) return 'Naranja'
+  if (n.includes('LIMON') || n.includes('LIMÓN') || n.includes('LIM ')) return 'Limón'
+  if (n.includes('MAND') || n.includes('CLEMENTINA')) return 'Mandarina'
+  return 'Sin categoría'
+}
 
 function getChartColors() {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark'
   return {
     grid: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
     tick: dark ? '#888785' : '#8a8880',
-    bg: dark ? '#1c1b19' : '#f9f8f5'
+    bg:   dark ? '#1c1b19' : '#f9f8f5'
   }
 }
 
 function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id] } }
 
-function showToast(msg) {
+function showToast(msg, type = '') {
   const t = document.getElementById('toast')
-  t.textContent = msg; t.classList.add('show')
-  setTimeout(() => t.classList.remove('show'), 2500)
+  t.textContent = msg
+  t.className = 'toast show' + (type ? ' toast-' + type : '')
+  setTimeout(() => t.className = 'toast', 3000)
+}
+
+function baseChartOptions(colors, unit = '€') {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${fmt(ctx.raw)} ${unit}` } }
+    },
+    scales: {
+      x: { grid: { color: colors.grid }, ticks: { color: colors.tick, font:{ size:11 } } },
+      y: { grid: { color: colors.grid }, ticks: { color: colors.tick, font:{ size:11 }, callback: v => `${v} ${unit}` } }
+    }
+  }
+}
+
+// =========== INIT ===========
+async function initApp() {
+  showLoading(true)
+  try {
+    data = await fetchAllRecords()
+  } catch(e) {
+    console.error(e)
+    showToast('⚠ Error al cargar datos de Supabase', 'error')
+  }
+  showLoading(false)
+  populateAllSelects()
+  renderDashboard()
+
+  subscribeToChanges((payload) => {
+    const { event_type, new: nr, old: or } = payload
+    if (event_type === 'INSERT' && nr)  { data.push(normalizeRow(nr)); showToast(`✓ Nuevo: ${nr.producto}`) }
+    else if (event_type === 'DELETE' && or) data = data.filter(d => d.id !== or.id)
+    else if (event_type === 'UPDATE' && nr) {
+      const i = data.findIndex(d => d.id === nr.id)
+      if (i !== -1) data[i] = normalizeRow(nr)
+    }
+    rerenderCurrentPage()
+  })
+}
+
+function showLoading(on) {
+  const el = document.getElementById('loading-overlay')
+  if (el) el.style.display = on ? 'flex' : 'none'
 }
 
 function rerenderCurrentPage() {
   const active = document.querySelector('.page.active')?.id
   if (!active) return
   populateAllSelects()
-  if (active === 'page-dashboard') { renderDashboard(); renderHistoryView() }
+  if (active === 'page-dashboard')    renderDashboard()
+  else if (active === 'page-ventas')  renderVentas()
+  else if (active === 'page-clientes') renderClientes()
+  else if (active === 'page-precios') renderPrecios()
   else if (active === 'page-tendencias') renderTrends()
-  else if (active === 'page-comparar') renderComparePage()
+  else if (active === 'page-comparar')  renderComparePage()
   else if (active === 'page-predicciones') renderPredictions()
-  else if (active === 'page-datos') renderTable()
-  else if (active === 'page-buscar') initSearch()
 }
 
-async function initApp() {
-  try {
-    data = await fetchAllRecords()
-  } catch (e) {
-    console.error('Error loading from Supabase:', e)
-    showToast('⚠ Error al cargar datos de Supabase')
-  }
-  populateAllSelects()
-  renderDashboard()
-  renderHistoryView()
-
-  subscribeToChanges((payload) => {
-    const { event_type, new: newRow, old: oldRow } = payload
-    if (event_type === 'INSERT' && newRow) {
-      data.push(normalizeRow(newRow))
-      showToast(`📦 Nuevo registro: ${newRow.producto}`)
-    } else if (event_type === 'DELETE' && oldRow) {
-      data = data.filter(d => d.id !== oldRow.id)
-    } else if (event_type === 'UPDATE' && newRow) {
-      const idx = data.findIndex(d => d.id === newRow.id)
-      if (idx !== -1) data[idx] = normalizeRow(newRow)
-    }
-    rerenderCurrentPage()
-  })
-}
-
-// =================== NAVIGATION ===================
+// =========== NAVIGATION ===========
 function navigate(page, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
   document.getElementById('page-' + page).classList.add('active')
-  btn.classList.add('active')
-  if (page === 'dashboard') { renderDashboard(); renderHistoryView() }
-  if (page === 'tendencias') renderTrends()
-  if (page === 'comparar') renderComparePage()
+  if (btn) btn.classList.add('active')
+  if (page === 'dashboard')    renderDashboard()
+  if (page === 'ventas')       { ventasPage = 0; renderVentas() }
+  if (page === 'clientes')     { clienteSelected = null; renderClientes() }
+  if (page === 'precios')      renderPrecios()
+  if (page === 'tendencias')   renderTrends()
+  if (page === 'comparar')     renderComparePage()
   if (page === 'predicciones') renderPredictions()
-  if (page === 'datos') renderTable()
-  if (page === 'buscar') initSearch()
 }
 window.navigate = navigate
 
-// =================== POPULATE SELECTS ===================
+// =========== POPULATE SELECTS ===========
 function populateAllSelects() {
-  const years = getYears()
+  const years    = getYears()
   const products = getProducts()
-  const cats = getCategories()
+  const cats     = getCategories()
+  const clientes = getClientes()
+
+  const setOpts = (id, items, allLabel = 'Todos') => {
+    const el = document.getElementById(id)
+    if (!el) return
+    const prev = el.value
+    el.innerHTML = `<option value="">${allLabel}</option>` + items.map(i => `<option value="${i}">${i}</option>`).join('')
+    if (items.includes(prev)) el.value = prev
+  }
+
+  setOpts('ventas-year',    years,    'Todos los años')
+  setOpts('ventas-month',   MONTH_NAMES.map((_,i)=>i+1), 'Todos los meses')
+  setOpts('ventas-cliente', clientes, 'Todos los clientes')
+  setOpts('trend-product',  products, 'Todos los productos')
+  setOpts('cmp-product',    products, 'Todos los productos')
+  setOpts('pred-product',   products, 'Todos los productos')
+  setOpts('search-product', products, 'Todos los productos')
+  setOpts('precios-product',products, '— Selecciona producto —')
+
+  const setYearsRange = (from, to) => {
+    [from, to].forEach(id => {
+      const el = document.getElementById(id)
+      if (el) el.innerHTML = `<option value="">—</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
+    })
+  }
+  setYearsRange('trend-year-from','trend-year-to')
 
   const pd = document.getElementById('product-datalist')
   if (pd) pd.innerHTML = products.map(p => `<option value="${p}">`).join('')
   const cd = document.getElementById('cat-datalist')
   if (cd) cd.innerHTML = cats.map(c => `<option value="${c}">`).join('')
 
-  const dps = document.getElementById('dash-product-select')
-  if (dps) dps.innerHTML = products.map(p => `<option value="${p}">${p}</option>`).join('')
-
-  const dys = document.getElementById('dash-year-select')
-  if (dys) {
-    dys.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('')
-    if (years.length) dys.value = years[years.length-1]
+  // month select for ventas (re-init with month names not numbers)
+  const vm = document.getElementById('ventas-month')
+  if (vm) {
+    const pv = vm.value
+    vm.innerHTML = `<option value="">Todos los meses</option>` + MONTH_NAMES.map((m,i) => `<option value="${i+1}">${m}</option>`).join('')
+    if (pv) vm.value = pv
   }
-
-  ;['trend-product','cmp-product','search-product'].forEach(id => {
-    const el = document.getElementById(id)
-    if (el) el.innerHTML = `<option value="">Todos los productos</option>` + products.map(p => `<option value="${p}">${p}</option>`).join('')
-  })
-  ;['trend-year-from','trend-year-to'].forEach(id => {
-    const el = document.getElementById(id)
-    if (el) el.innerHTML = `<option value="">-</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
-  })
-
-  const tyf = document.getElementById('table-year-filter')
-  if (tyf) tyf.innerHTML = `<option value="">Todos los años</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
-  const tcf = document.getElementById('table-cat-filter')
-  if (tcf) tcf.innerHTML = `<option value="">Todas las categorías</option>` + cats.map(c => `<option value="${c}">${c}</option>`).join('')
-
-  const sy = document.getElementById('search-year')
-  if (sy) sy.innerHTML = `<option value="">Todos</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
 }
 
-// =================== DASHBOARD ===================
+// =========== DASHBOARD ===========
 function renderDashboard() {
   populateAllSelects()
   const years = getYears()
   if (!years.length) {
-    document.getElementById('kpi-grid').innerHTML = '<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Sin datos</div><div class="kpi-value" style="font-size:var(--text-base)">Añade registros para ver el resumen</div></div>'
+    document.getElementById('dash-kpis').innerHTML = `
+      <div class="kpi-card kpi-wide">
+        <div class="kpi-label">Sin datos</div>
+        <div class="kpi-value" style="font-size:1rem">Importa un archivo para comenzar</div>
+      </div>`
     return
   }
-  const allPrices = data.map(d => d.price)
-  const latestYear = years[years.length - 1]
-  const prevYear = years[years.length - 2]
-  const latestPrices = data.filter(d => d.year === latestYear).map(d => d.price)
-  const prevPrices = data.filter(d => d.year === prevYear).map(d => d.price)
-  const avgLatest = avg(latestPrices)
-  const avgPrev = avg(prevPrices)
-  const pctChange = avgPrev ? ((avgLatest - avgPrev) / avgPrev) * 100 : 0
-  const maxP = Math.max(...allPrices)
-  const minP = Math.min(...allPrices)
-  const maxRec = data.find(d => d.price === maxP)
-  const minRec = data.find(d => d.price === minP)
 
-  document.getElementById('dashboard-subtitle').textContent = `Datos de ${years[0]} a ${latestYear} · ${data.length} registros`
+  const latestYear  = years[years.length - 1]
+  const prevYear    = years[years.length - 2]
+  const allPrices   = data.filter(d => d.price > 0).map(d => d.price)
+  const latestPrices = data.filter(d => d.year === latestYear && d.price > 0).map(d => d.price)
+  const prevPrices   = data.filter(d => d.year === prevYear  && d.price > 0).map(d => d.price)
+  const avgLatest   = avg(latestPrices)
+  const avgPrev     = avg(prevPrices)
+  const pctChange   = avgPrev ? ((avgLatest - avgPrev) / avgPrev) * 100 : 0
 
-  const kpis = [
-    { label: `Precio medio ${latestYear}`, value: `${fmt(avgLatest)} €`, delta: fmtPct(pctChange), up: pctChange > 0 },
-    { label: 'Total registros', value: data.length.toLocaleString('es'), delta: `${years.length} años`, flat: true },
-    { label: 'Precio máximo histórico', value: `${fmt(maxP)} €`, delta: `${maxRec?.product} (${maxRec?.year})`, flat: true },
-    { label: 'Precio mínimo histórico', value: `${fmt(minP)} €`, delta: `${minRec?.product} (${minRec?.year})`, flat: true },
+  const totalRevenue = sum(data.map(d => d.base_iva))
+  const totalKg      = sum(data.map(d => d.kilos))
+  const hasRevenue   = totalRevenue > 0
+  const hasKg        = totalKg > 0
+  const nClientes    = new Set(data.map(d => d.cliente).filter(Boolean)).size
+
+  document.getElementById('dash-subtitle').textContent =
+    `Datos de ${years[0]} a ${latestYear} · ${fmtNum(data.length)} registros`
+
+  const kpis = hasRevenue ? [
+    { label: 'Facturación total', value: fmtEur(totalRevenue), sub: `${years[0]}–${latestYear}`, icon: '💰', cls: 'kpi-gold' },
+    { label: 'Kilos vendidos', value: hasKg ? fmtKg(totalKg) : '—', sub: 'Total acumulado', icon: '⚖️', cls: 'kpi-blue' },
+    { label: `Precio medio ${latestYear}`, value: fmtEur(avgLatest), delta: fmtPct(pctChange), up: pctChange > 0, icon: '🏷️', cls: '' },
+    { label: 'Clientes únicos', value: nClientes || getClientes().length, sub: 'Cartera activa', icon: '👥', cls: 'kpi-teal' },
+  ] : [
+    { label: `Precio medio ${latestYear}`, value: fmtEur(avgLatest), delta: fmtPct(pctChange), up: pctChange > 0, icon: '🏷️', cls: '' },
+    { label: 'Total registros', value: fmtNum(data.length), sub: `${years.length} años`, icon: '📋', cls: 'kpi-blue' },
+    { label: 'Precio máximo', value: fmtEur(Math.max(...allPrices)), sub: 'Histórico', icon: '↑', cls: 'kpi-gold' },
+    { label: 'Precio mínimo', value: fmtEur(Math.min(...allPrices.filter(p=>p>0))), sub: 'Histórico', icon: '↓', cls: '' },
   ]
 
-  document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
-    <div class="kpi-card">
+  document.getElementById('dash-kpis').innerHTML = kpis.map(k => `
+    <div class="kpi-card ${k.cls || ''}">
+      <div class="kpi-icon">${k.icon}</div>
       <div class="kpi-label">${k.label}</div>
       <div class="kpi-value">${k.value}</div>
-      <div class="kpi-delta ${k.flat ? 'delta-flat' : (k.up ? 'delta-up' : 'delta-down')}">${k.delta}</div>
+      ${k.delta
+        ? `<div class="kpi-delta ${k.up ? 'delta-up':'delta-down'}">${k.delta} vs año anterior</div>`
+        : k.sub ? `<div class="kpi-delta delta-flat">${k.sub}</div>` : ''}
     </div>
   `).join('')
 
@@ -166,182 +242,491 @@ function renderDashboard() {
 }
 
 function renderDashCharts() {
-  const selProduct = document.getElementById('dash-product-select')?.value
-  const selYear = parseInt(document.getElementById('dash-year-select')?.value)
-  const years = getYears()
   const colors = getChartColors()
+  const years  = getYears()
 
-  destroyChart('annualChart')
+  // Facturación/precio anual
+  destroyChart('dashAnnualChart')
+  const hasRevenue = data.some(d => d.base_iva > 0)
+  const annualLabels = years
   const annualData = years.map(y => {
-    const filtered = data.filter(d => d.year === y && (!selProduct || d.product === selProduct))
-    return avg(filtered.map(d => d.price))
+    const yd = data.filter(d => d.year === y)
+    return hasRevenue ? sum(yd.map(d => d.base_iva)) : avg(yd.filter(d=>d.price>0).map(d => d.price))
   })
-  const ctx1 = document.getElementById('annualChart').getContext('2d')
-  charts['annualChart'] = new Chart(ctx1, {
-    type: 'line',
-    data: {
-      labels: years,
-      datasets: [{
-        label: selProduct || 'Precio medio',
-        data: annualData,
-        borderColor: '#01696f',
-        backgroundColor: 'rgba(1,105,111,0.08)',
-        borderWidth: 2,
-        tension: 0.35,
-        fill: true,
-        pointRadius: 4,
-        pointBackgroundColor: '#01696f',
-      }]
-    },
-    options: baseChartOptions(colors, '€')
-  })
-
-  destroyChart('categoryChart')
-  const cats = getCategories()
-  const catAvgs = cats.map(c => avg(data.filter(d => d.category === c && d.year === (selYear || years[years.length-1])).map(d => d.price)))
-  const ctx2 = document.getElementById('categoryChart').getContext('2d')
-  charts['categoryChart'] = new Chart(ctx2, {
-    type: 'doughnut',
-    data: {
-      labels: cats,
-      datasets: [{ data: catAvgs, backgroundColor: CHART_COLORS.slice(0, cats.length), borderWidth: 2, borderColor: colors.bg }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'right', labels: { color: colors.tick, font: { size: 11 }, boxWidth: 12 } },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt(ctx.raw)} €` } }
-      }
-    }
-  })
-
-  destroyChart('monthlyChart')
-  const yr = selYear || (getYears().length ? getYears()[getYears().length-1] : new Date().getFullYear())
-  const monthlyData = Array.from({length:12}, (_,i) => {
-    const m = i+1
-    const filtered = data.filter(d => d.year === yr && d.month === m && (!selProduct || d.product === selProduct))
-    return avg(filtered.map(d => d.price))
-  })
-  const ctx3 = document.getElementById('monthlyChart').getContext('2d')
-  charts['monthlyChart'] = new Chart(ctx3, {
-    type: 'bar',
-    data: {
-      labels: MONTHS,
-      datasets: [{
-        label: `${selProduct || 'Media'} ${yr}`,
-        data: monthlyData,
-        backgroundColor: monthlyData.map(v => v === Math.max(...monthlyData.filter(Boolean)) ? '#da7101' : 'rgba(1,105,111,0.65)'),
-        borderRadius: 5,
-        borderSkipped: false,
-      }]
-    },
-    options: baseChartOptions(colors, '€')
-  })
-}
-
-// =================== HISTORY VIEW ===================
-function getHistoryFiltered() {
-  const q = (document.getElementById('history-search')?.value || '').toLowerCase()
-  const year = parseInt(document.getElementById('history-year')?.value || '') || null
-  const cat = document.getElementById('history-category')?.value || ''
-  let rows = data.filter(r => {
-    let ok = true
-    if (q) ok = ok && r.product.toLowerCase().includes(q)
-    if (year) ok = ok && r.year === year
-    if (cat) ok = ok && r.category === cat
-    return ok
-  })
-  rows = rows.sort((a,b) => {
-    const d = (a.year - b.year) || (a.month - b.month)
-    return (document.getElementById('history-sort')?.value || 'desc') === 'asc' ? d : -d
-  })
-  return rows
-}
-
-function renderHistoryFilters() {
-  const years = getYears()
-  const cats = getCategories()
-  const yearSel = document.getElementById('history-year')
-  const catSel = document.getElementById('history-category')
-  if (yearSel) yearSel.innerHTML = `<option value="">Todos los años</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
-  if (catSel) catSel.innerHTML = `<option value="">Todas las categorías</option>` + cats.map(c => `<option value="${c}">${c}</option>`).join('')
-}
-
-function renderHistoryView() {
-  renderHistoryFilters()
-  const rows = getHistoryFiltered()
-  const historyList = document.getElementById('historyList')
-  const historySummary = document.getElementById('historySummary')
-  const chartColors = getChartColors()
-  destroyChart('historyChart')
-
-  if (!rows.length) {
-    if (historyList) historyList.innerHTML = '<div class="empty-state"><h3>Sin registros</h3><p>No hay datos para esos filtros.</p></div>'
-    if (historySummary) historySummary.innerHTML = '<div class="empty-state"><h3>Sin resumen</h3><p>Selecciona otro producto o quita filtros.</p></div>'
-    return
-  }
-
-  const grouped = Object.values(rows.reduce((acc, r) => {
-    const key = r.product
-    if (!acc[key]) acc[key] = { product: key, category: r.category, items: [] }
-    acc[key].items.push(r)
-    return acc
-  }, {}))
-
-  const top = grouped[0]
-  const prices = top.items.map(x => x.price)
-  const first = top.items[0]
-  const last = top.items[top.items.length - 1]
-  const delta = first && last ? ((last.price - first.price) / first.price) * 100 : 0
-  if (historySummary) {
-    historySummary.innerHTML = `
-      <div class="kpi-card"><div class="kpi-label">Producto</div><div class="kpi-value" style="font-size:1rem">${top.product}</div><div class="kpi-delta delta-flat">${top.category}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Primer precio</div><div class="kpi-value">${fmt(first.price)} €</div></div>
-      <div class="kpi-card"><div class="kpi-label">Último precio</div><div class="kpi-value">${fmt(last.price)} €</div><div class="kpi-delta ${delta >= 0 ? 'delta-up' : 'delta-down'}">${fmtPct(delta)}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Máximo</div><div class="kpi-value">${fmt(Math.max(...prices))} €</div></div>
-      <div class="kpi-card"><div class="kpi-label">Mínimo</div><div class="kpi-value">${fmt(Math.min(...prices))} €</div></div>
-    `
-  }
-
-  const ctx = document.getElementById('historyChart')?.getContext('2d')
-  if (ctx) {
-    charts['historyChart'] = new Chart(ctx, {
-      type: 'line',
+  const ctx1 = document.getElementById('dashAnnualChart')?.getContext('2d')
+  if (ctx1) {
+    charts['dashAnnualChart'] = new Chart(ctx1, {
+      type: 'bar',
       data: {
-        labels: top.items.map(x => `${MONTHS[(x.month||1)-1]} ${x.year}`),
+        labels: annualLabels,
         datasets: [{
-          label: top.product,
-          data: top.items.map(x => x.price),
-          borderColor: '#01696f',
-          backgroundColor: 'rgba(1,105,111,0.08)',
-          borderWidth: 2,
-          tension: 0.3,
-          pointRadius: 3,
-          fill: true
+          label: hasRevenue ? 'Facturación (€)' : 'Precio medio (€)',
+          data: annualData,
+          backgroundColor: annualData.map((v,i) => i === annualData.length-1 ? '#da7101' : 'rgba(1,105,111,0.65)'),
+          borderRadius: 6, borderSkipped: false,
         }]
       },
-      options: baseChartOptions(chartColors, '€')
+      options: baseChartOptions(colors, hasRevenue ? '€' : '€/kg')
     })
   }
 
-  if (historyList) {
-    historyList.innerHTML = grouped.map(g => {
-      const vals = g.items.map(x => x.price)
-      const deltaG = g.items.length > 1 ? ((g.items[g.items.length - 1].price - g.items[0].price) / g.items[0].price) * 100 : 0
-      return `
-        <div class="history-item">
-          <h4>${g.product}</h4>
-          <div class="meta"><span>${g.category}</span><span>${g.items.length} registros</span><span>${g.items[0].year} → ${g.items[g.items.length - 1].year}</span></div>
-          <div class="value">${fmt(g.items[g.items.length - 1].price)} €</div>
-          <div class="evolution-pill ${deltaG >= 0 ? 'evo-up' : 'evo-down'}">${deltaG >= 0 ? '▲' : '▼'} ${fmtPct(deltaG)}</div>
-        </div>
-      `
-    }).join('')
+  // Top clientes por facturación
+  destroyChart('dashClientChart')
+  const ctx2 = document.getElementById('dashClientChart')?.getContext('2d')
+  if (ctx2) {
+    const clienteMap = {}
+    data.forEach(d => {
+      const k = d.denominacion_social || d.cliente || 'Desconocido'
+      if (!clienteMap[k]) clienteMap[k] = 0
+      clienteMap[k] += hasRevenue ? d.base_iva : d.price
+    })
+    const sorted = Object.entries(clienteMap).sort((a,b)=>b[1]-a[1]).slice(0,10)
+    charts['dashClientChart'] = new Chart(ctx2, {
+      type: 'bar',
+      data: {
+        labels: sorted.map(([k]) => k.length > 22 ? k.slice(0,22)+'…' : k),
+        datasets: [{
+          label: hasRevenue ? 'Facturado (€)' : 'Precio (€)',
+          data: sorted.map(([,v]) => v),
+          backgroundColor: CHART_COLORS.slice(0,sorted.length),
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display:false }, tooltip:{ callbacks:{ label: c => ` ${fmtEur(c.raw)}` } } },
+        scales: {
+          x: { grid:{ color: colors.grid }, ticks:{ color: colors.tick, font:{ size:10 }, callback: v => fmtEur(v) } },
+          y: { grid:{ display:false }, ticks:{ color: colors.tick, font:{ size:11 } } }
+        }
+      }
+    })
+  }
+
+  // Evolución mensual (último año)
+  destroyChart('dashMonthlyChart')
+  const ctx3 = document.getElementById('dashMonthlyChart')?.getContext('2d')
+  if (ctx3) {
+    const latestYear = years[years.length-1]
+    const monthly = Array.from({length:12}, (_,i) => {
+      const yd = data.filter(d => d.year === latestYear && d.month === i+1)
+      return hasRevenue ? sum(yd.map(d=>d.base_iva)) : avg(yd.filter(d=>d.price>0).map(d=>d.price))
+    })
+    charts['dashMonthlyChart'] = new Chart(ctx3, {
+      type: 'line',
+      data: {
+        labels: MONTHS,
+        datasets: [{
+          label: hasRevenue ? 'Facturación' : 'Precio medio',
+          data: monthly,
+          borderColor: '#01696f', backgroundColor: 'rgba(1,105,111,0.08)',
+          borderWidth: 2, tension: 0.35, fill: true, pointRadius: 4,
+          pointBackgroundColor: '#01696f',
+        }]
+      },
+      options: baseChartOptions(colors, hasRevenue ? '€' : '€/kg')
+    })
   }
 }
-window.renderHistoryView = renderHistoryView
+window.renderDashCharts = renderDashCharts
 
-// =================== TRENDS ===================
+// =========== VENTAS PAGE ===========
+function getVentasFiltered() {
+  const q    = (document.getElementById('ventas-search')?.value || '').toLowerCase()
+  const year = parseInt(document.getElementById('ventas-year')?.value) || null
+  const month= parseInt(document.getElementById('ventas-month')?.value) || null
+  const cli  = (document.getElementById('ventas-cliente')?.value || '').toLowerCase()
+
+  return data.filter(d => {
+    if (year  && d.year  !== year)  return false
+    if (month && d.month !== month) return false
+    if (cli   && !(d.denominacion_social || d.cliente || '').toLowerCase().includes(cli)) return false
+    if (q     && !d.product.toLowerCase().includes(q) && !(d.referencia||'').toLowerCase().includes(q)) return false
+    return true
+  }).sort((a,b) => (b.year - a.year) || (b.month||0) - (a.month||0))
+}
+
+function renderVentas() {
+  populateAllSelects()
+  const rows   = getVentasFiltered()
+  const total  = rows.length
+  const start  = ventasPage * ventasPageSize
+  const pageRows = rows.slice(start, start + ventasPageSize)
+
+  // Summary bar
+  const hasRev = rows.some(d => d.base_iva > 0)
+  const hasKg  = rows.some(d => d.kilos > 0)
+  const rev    = sum(rows.map(d => d.base_iva))
+  const kg     = sum(rows.map(d => d.kilos))
+
+  document.getElementById('ventas-summary').innerHTML = `
+    <span class="summary-chip">${fmtNum(total)} registros</span>
+    ${hasRev ? `<span class="summary-chip chip-gold">${fmtEur(rev)} facturado</span>` : ''}
+    ${hasKg  ? `<span class="summary-chip chip-blue">${fmtKg(kg)} vendidos</span>`    : ''}
+  `
+
+  const tbody = document.getElementById('ventas-tbody')
+  if (!pageRows.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-row">Sin resultados para los filtros aplicados</td></tr>`
+  } else {
+    tbody.innerHTML = pageRows.map(d => {
+      const nombre = d.denominacion_social || d.cliente || '—'
+      return `<tr>
+        <td class="td-date">${d.year}${d.month ? '/'+ String(d.month).padStart(2,'0') : ''}</td>
+        <td class="td-doc">${d.documento || '—'}</td>
+        <td class="td-client" title="${nombre}">${nombre.length>28?nombre.slice(0,28)+'…':nombre}</td>
+        <td class="td-product" title="${d.product}">${d.product.length>32?d.product.slice(0,32)+'…':d.product}</td>
+        <td class="td-ref">${d.referencia || '—'}</td>
+        <td class="td-num">${d.kilos > 0 ? fmtKg(d.kilos) : d.unidades > 0 ? fmtNum(d.unidades)+' ud' : '—'}</td>
+        <td class="td-num">${d.price > 0 ? fmtEur(d.price) : '—'}</td>
+        <td class="td-num td-total">${d.base_iva !== 0 ? fmtEur(d.base_iva) : '—'}</td>
+        <td><button class="btn-delete" onclick="deleteRecord(${d.id})" title="Eliminar">✕</button></td>
+      </tr>`
+    }).join('')
+  }
+
+  // Pagination
+  const totalPages = Math.ceil(total / ventasPageSize)
+  const pag = document.getElementById('ventas-pagination')
+  if (pag) {
+    pag.innerHTML = totalPages <= 1 ? '' : `
+      <button class="btn btn-ghost pag-btn" onclick="ventasGoPage(0)" ${ventasPage===0?'disabled':''}>«</button>
+      <button class="btn btn-ghost pag-btn" onclick="ventasGoPage(${ventasPage-1})" ${ventasPage===0?'disabled':''}>‹</button>
+      <span class="pag-info">Pág. ${ventasPage+1} de ${totalPages}</span>
+      <button class="btn btn-ghost pag-btn" onclick="ventasGoPage(${ventasPage+1})" ${ventasPage>=totalPages-1?'disabled':''}>›</button>
+      <button class="btn btn-ghost pag-btn" onclick="ventasGoPage(${totalPages-1})" ${ventasPage>=totalPages-1?'disabled':''}>»</button>
+      <select class="form-select pag-size" onchange="setVentasPageSize(this.value)" style="width:auto;padding:4px 8px">
+        <option value="50"  ${ventasPageSize===50?'selected':''}>50/pág</option>
+        <option value="100" ${ventasPageSize===100?'selected':''}>100/pág</option>
+        <option value="200" ${ventasPageSize===200?'selected':''}>200/pág</option>
+      </select>
+    `
+  }
+
+  document.getElementById('ventas-count').textContent =
+    `Mostrando ${start+1}–${Math.min(start+ventasPageSize,total)} de ${fmtNum(total)} registros`
+}
+window.renderVentas = renderVentas
+
+function ventasGoPage(p) {
+  const total = getVentasFiltered().length
+  const maxP  = Math.max(0, Math.ceil(total/ventasPageSize) - 1)
+  ventasPage  = Math.max(0, Math.min(p, maxP))
+  renderVentas()
+}
+window.ventasGoPage = ventasGoPage
+
+function setVentasPageSize(sz) {
+  ventasPageSize = parseInt(sz) || 50
+  ventasPage = 0
+  renderVentas()
+}
+window.setVentasPageSize = setVentasPageSize
+
+// =========== CLIENTES PAGE ===========
+function renderClientes() {
+  populateAllSelects()
+  if (clienteSelected) { renderClienteDetail(clienteSelected); return }
+
+  const hasRev = data.some(d => d.base_iva > 0)
+  const hasKg  = data.some(d => d.kilos  > 0)
+
+  // Build client map
+  const clientMap = {}
+  data.forEach(d => {
+    const code  = d.cliente || ''
+    const name  = d.denominacion_social || d.cliente || 'Desconocido'
+    const key   = code || name
+    if (!clientMap[key]) {
+      clientMap[key] = { code, name, rev:0, kg:0, n:0, years: new Set(), lastYear:0 }
+    }
+    clientMap[key].rev  += d.base_iva
+    clientMap[key].kg   += d.kilos
+    clientMap[key].n    += 1
+    clientMap[key].years.add(d.year)
+    if (d.year > clientMap[key].lastYear) clientMap[key].lastYear = d.year
+  })
+
+  const clients = Object.values(clientMap).sort((a,b) => b.rev - a.rev || b.kg - a.kg)
+  const totRev  = sum(clients.map(c=>c.rev))
+  const totKg   = sum(clients.map(c=>c.kg))
+
+  document.getElementById('cli-kpis').innerHTML = `
+    <div class="kpi-card kpi-teal">
+      <div class="kpi-icon">👥</div>
+      <div class="kpi-label">Clientes totales</div>
+      <div class="kpi-value">${clients.length}</div>
+    </div>
+    ${hasRev ? `<div class="kpi-card kpi-gold">
+      <div class="kpi-icon">💰</div>
+      <div class="kpi-label">Facturación total</div>
+      <div class="kpi-value">${fmtEur(totRev)}</div>
+    </div>` : ''}
+    ${hasKg ? `<div class="kpi-card kpi-blue">
+      <div class="kpi-icon">⚖️</div>
+      <div class="kpi-label">KG totales vendidos</div>
+      <div class="kpi-value">${fmtKg(totKg)}</div>
+    </div>` : ''}
+    ${hasRev ? `<div class="kpi-card">
+      <div class="kpi-icon">📊</div>
+      <div class="kpi-label">Media por cliente</div>
+      <div class="kpi-value">${clients.length ? fmtEur(totRev/clients.length) : '—'}</div>
+    </div>` : ''}
+  `
+
+  const cols = hasRev
+    ? `<th>Nombre cliente</th><th>Código</th><th>Facturado (€)</th>${hasKg?'<th>KG totales</th>':''}<th>Registros</th><th>Último año</th><th></th>`
+    : `<th>Nombre cliente</th><th>Código</th>${hasKg?'<th>KG totales</th>':''}<th>Registros</th><th>Último año</th><th></th>`
+
+  const rows = clients.map(c => `
+    <tr class="cli-row" onclick="selectCliente('${(c.code||c.name).replace(/'/g,"\\'")}')">
+      <td><strong>${c.name}</strong></td>
+      <td><code style="font-size:0.8em;color:var(--color-text-muted)">${c.code||'—'}</code></td>
+      ${hasRev ? `<td class="td-total">${fmtEur(c.rev)}</td>` : ''}
+      ${hasKg  ? `<td class="td-num">${fmtKg(c.kg)}</td>` : ''}
+      <td>${fmtNum(c.n)}</td>
+      <td>${c.lastYear||'—'}</td>
+      <td><button class="btn btn-ghost" style="font-size:0.8em">Ver →</button></td>
+    </tr>
+  `).join('')
+
+  document.getElementById('cli-content').innerHTML = `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr>${cols}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `
+}
+window.renderClientes = renderClientes
+
+function selectCliente(key) {
+  clienteSelected = key
+  renderClienteDetail(key)
+}
+window.selectCliente = selectCliente
+
+function backToClientes() {
+  clienteSelected = null
+  renderClientes()
+}
+window.backToClientes = backToClientes
+
+function renderClienteDetail(key) {
+  const cliData = data.filter(d => (d.cliente || d.denominacion_social || '') === key || d.denominacion_social === key || d.cliente === key)
+  if (!cliData.length) { backToClientes(); return }
+
+  const name   = cliData[0].denominacion_social || cliData[0].cliente || key
+  const rev    = sum(cliData.map(d=>d.base_iva))
+  const kg     = sum(cliData.map(d=>d.kilos))
+  const years  = [...new Set(cliData.map(d=>d.year))].sort()
+  const hasRev = rev > 0
+  const hasKg  = kg > 0
+  const avgPvp = avg(cliData.filter(d=>d.price>0).map(d=>d.price))
+
+  // Top products
+  const prodMap = {}
+  cliData.forEach(d => {
+    if (!prodMap[d.product]) prodMap[d.product] = { rev:0, kg:0, n:0 }
+    prodMap[d.product].rev += d.base_iva
+    prodMap[d.product].kg  += d.kilos
+    prodMap[d.product].n   += 1
+  })
+  const topProds = Object.entries(prodMap).sort((a,b)=>b[1].rev-a[1].rev).slice(0,5)
+
+  document.getElementById('cli-content').innerHTML = `
+    <div style="margin-bottom:var(--space-4)">
+      <button class="btn btn-ghost" onclick="backToClientes()">← Volver a clientes</button>
+    </div>
+    <h3 style="font-size:var(--text-lg);font-weight:700;margin-bottom:var(--space-6)">${name}</h3>
+    <div class="grid-4" style="margin-bottom:var(--space-6)">
+      ${hasRev?`<div class="kpi-card kpi-gold"><div class="kpi-icon">💰</div><div class="kpi-label">Facturación total</div><div class="kpi-value">${fmtEur(rev)}</div></div>`:''}
+      ${hasKg ?`<div class="kpi-card kpi-blue"><div class="kpi-icon">⚖️</div><div class="kpi-label">KG totales</div><div class="kpi-value">${fmtKg(kg)}</div></div>`:''}
+      <div class="kpi-card"><div class="kpi-icon">🏷️</div><div class="kpi-label">PVP medio</div><div class="kpi-value">${fmtEur(avgPvp)}/kg</div></div>
+      <div class="kpi-card"><div class="kpi-icon">📋</div><div class="kpi-label">Registros</div><div class="kpi-value">${fmtNum(cliData.length)}</div></div>
+    </div>
+    <div class="grid-2" style="margin-bottom:var(--space-6)">
+      <div class="card">
+        <div class="chart-label"><span>${hasRev?'Facturación anual':'KG anuales'}</span></div>
+        <div class="chart-wrap" style="height:240px"><canvas id="cliAnnualChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="chart-label"><span>Top 5 productos</span></div>
+        <div class="chart-wrap" style="height:240px"><canvas id="cliProdChart"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-title">Historial de compras</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Fecha</th><th>Documento</th><th>Producto</th><th>KG</th><th>PVP (€/kg)</th><th>Base IVA (€)</th></tr></thead>
+          <tbody>
+            ${cliData.slice(0,100).map(d=>`<tr>
+              <td>${d.year}${d.month?'/'+String(d.month).padStart(2,'0'):''}</td>
+              <td>${d.documento||d.factura||'—'}</td>
+              <td title="${d.product}">${d.product.length>35?d.product.slice(0,35)+'…':d.product}</td>
+              <td class="td-num">${d.kilos>0?fmtKg(d.kilos):'—'}</td>
+              <td class="td-num">${d.price>0?fmtEur(d.price):'—'}</td>
+              <td class="td-total">${d.base_iva!==0?fmtEur(d.base_iva):'—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${cliData.length>100?`<p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-3)">Mostrando 100 de ${fmtNum(cliData.length)} registros</p>`:''}
+    </div>
+  `
+
+  // Charts
+  const colors = getChartColors()
+  setTimeout(() => {
+    destroyChart('cliAnnualChart')
+    const c1 = document.getElementById('cliAnnualChart')?.getContext('2d')
+    if (c1) {
+      charts['cliAnnualChart'] = new Chart(c1, {
+        type: 'bar',
+        data: {
+          labels: years,
+          datasets: [{
+            label: hasRev ? 'Facturado (€)' : 'KG',
+            data: years.map(y => {
+              const yd = cliData.filter(d=>d.year===y)
+              return hasRev ? sum(yd.map(d=>d.base_iva)) : sum(yd.map(d=>d.kilos))
+            }),
+            backgroundColor: 'rgba(1,105,111,0.65)', borderRadius: 5,
+          }]
+        },
+        options: baseChartOptions(colors, hasRev ? '€' : 'kg')
+      })
+    }
+
+    destroyChart('cliProdChart')
+    const c2 = document.getElementById('cliProdChart')?.getContext('2d')
+    if (c2) {
+      charts['cliProdChart'] = new Chart(c2, {
+        type: 'doughnut',
+        data: {
+          labels: topProds.map(([k]) => k.length>22?k.slice(0,22)+'…':k),
+          datasets: [{ data: topProds.map(([,v]) => hasRev?v.rev:v.kg), backgroundColor: CHART_COLORS, borderWidth: 2, borderColor: colors.bg }]
+        },
+        options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ position:'bottom', labels:{ color: colors.tick, font:{size:10}, boxWidth:10 } }, tooltip:{ callbacks:{ label: c => ` ${hasRev?fmtEur(c.raw):fmtKg(c.raw)}` } } } }
+      })
+    }
+  }, 50)
+}
+
+// =========== PRECIOS PAGE (Product price history) ===========
+function renderPrecios() {
+  populateAllSelects()
+  const product = document.getElementById('precios-product')?.value
+  const container = document.getElementById('precios-content')
+
+  if (!product) {
+    container.innerHTML = `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="48" height="48"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <h3>Selecciona un producto</h3>
+      <p>Elige un producto en el selector superior para ver su histórico de precios</p>
+    </div>`
+    destroyChart('precioChart'); destroyChart('precioKgChart')
+    return
+  }
+
+  const rows = data.filter(d => d.product === product).sort((a,b) => (a.year-b.year)||(a.month||0)-(b.month||0))
+  if (!rows.length) { container.innerHTML = `<div class="empty-state"><h3>Sin datos para ese producto</h3></div>`; return }
+
+  const prices  = rows.filter(d=>d.price>0).map(d=>d.price)
+  const revenues= rows.map(d=>d.base_iva)
+  const kgs     = rows.map(d=>d.kilos)
+  const avgP    = avg(prices)
+  const maxP    = prices.length ? Math.max(...prices) : 0
+  const minP    = prices.length ? Math.min(...prices) : 0
+  const totRev  = sum(revenues)
+  const totKg   = sum(kgs)
+  const cat     = rows[0]?.category || '—'
+
+  container.innerHTML = `
+    <div class="grid-4" style="margin-bottom:var(--space-6)">
+      <div class="kpi-card"><div class="kpi-icon">🏷️</div><div class="kpi-label">Precio medio</div><div class="kpi-value">${fmtEur(avgP)}/kg</div><div class="kpi-delta delta-flat">${cat}</div></div>
+      <div class="kpi-card"><div class="kpi-icon">↑</div><div class="kpi-label">Precio máximo</div><div class="kpi-value">${fmtEur(maxP)}</div></div>
+      <div class="kpi-card"><div class="kpi-icon">↓</div><div class="kpi-label">Precio mínimo</div><div class="kpi-value">${minP>0?fmtEur(minP):'—'}</div></div>
+      ${totRev>0?`<div class="kpi-card kpi-gold"><div class="kpi-icon">💰</div><div class="kpi-label">Facturación total</div><div class="kpi-value">${fmtEur(totRev)}</div></div>`
+               :`<div class="kpi-card kpi-blue"><div class="kpi-icon">⚖️</div><div class="kpi-label">KG totales</div><div class="kpi-value">${fmtKg(totKg)}</div></div>`}
+    </div>
+    <div class="grid-2" style="margin-bottom:var(--space-6)">
+      <div class="card"><div class="chart-label"><span>Evolución del precio (€/kg)</span></div><div class="chart-wrap" style="height:260px"><canvas id="precioChart"></canvas></div></div>
+      <div class="card"><div class="chart-label"><span>${totKg>0?'Volumen vendido (kg)':'Registros por año'}</span></div><div class="chart-wrap" style="height:260px"><canvas id="precioKgChart"></canvas></div></div>
+    </div>
+    <div class="card">
+      <div class="section-title">Historial completo de precios</div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Año</th><th>Mes</th><th>PVP (€/kg)</th><th>KG</th><th>Base IVA (€)</th><th>Cliente</th><th>Referencia</th></tr></thead>
+          <tbody>
+            ${rows.slice(0,200).map(d=>`<tr>
+              <td>${d.year}</td>
+              <td>${d.month?MONTH_NAMES[d.month-1]:'—'}</td>
+              <td class="td-num">${d.price>0?fmtEur(d.price):'—'}</td>
+              <td class="td-num">${d.kilos>0?fmtKg(d.kilos):'—'}</td>
+              <td class="td-total">${d.base_iva!==0?fmtEur(d.base_iva):'—'}</td>
+              <td>${d.denominacion_social||d.cliente||'—'}</td>
+              <td><code style="font-size:0.8em">${d.referencia||'—'}</code></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${rows.length>200?`<p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-3)">Mostrando 200 de ${fmtNum(rows.length)} registros</p>`:''}
+    </div>
+  `
+
+  const colors = getChartColors()
+  setTimeout(() => {
+    // Price chart
+    destroyChart('precioChart')
+    const points = []
+    const seen   = new Set()
+    rows.filter(d=>d.price>0).forEach(d => {
+      const k = `${d.year}-${d.month||0}`
+      if (!seen.has(k)) { seen.add(k); points.push({ label:`${d.month?MONTHS[d.month-1]+' ':''}${d.year}`, price: d.price }) }
+    })
+    const c1 = document.getElementById('precioChart')?.getContext('2d')
+    if (c1) {
+      charts['precioChart'] = new Chart(c1, {
+        type: 'line',
+        data: {
+          labels: points.map(p=>p.label),
+          datasets: [{ label: 'PVP (€/kg)', data: points.map(p=>p.price), borderColor:'#01696f', backgroundColor:'rgba(1,105,111,0.08)', borderWidth:2, tension:0.3, fill:true, pointRadius:3 }]
+        },
+        options: baseChartOptions(colors, '€/kg')
+      })
+    }
+
+    // KG chart by year
+    destroyChart('precioKgChart')
+    const years2 = [...new Set(rows.map(d=>d.year))].sort()
+    const c2 = document.getElementById('precioKgChart')?.getContext('2d')
+    if (c2) {
+      charts['precioKgChart'] = new Chart(c2, {
+        type: 'bar',
+        data: {
+          labels: years2,
+          datasets: [{
+            label: totKg>0 ? 'KG vendidos' : 'Registros',
+            data: years2.map(y => {
+              const yd = rows.filter(d=>d.year===y)
+              return totKg>0 ? sum(yd.map(d=>d.kilos)) : yd.length
+            }),
+            backgroundColor: 'rgba(0,100,148,0.6)', borderRadius: 5,
+          }]
+        },
+        options: baseChartOptions(colors, totKg>0 ? 'kg' : '')
+      })
+    }
+  }, 50)
+}
+window.renderPrecios = renderPrecios
+
+// =========== TENDENCIAS ===========
 function renderTrends() {
   populateAllSelects()
   renderTrendCharts()
@@ -350,96 +735,108 @@ window.renderTrends = renderTrends
 
 function renderTrendCharts() {
   const selProduct = document.getElementById('trend-product')?.value
-  const yearFrom = parseInt(document.getElementById('trend-year-from')?.value) || null
-  const yearTo = parseInt(document.getElementById('trend-year-to')?.value) || null
-  let years = getYears()
+  const yearFrom   = parseInt(document.getElementById('trend-year-from')?.value) || null
+  const yearTo     = parseInt(document.getElementById('trend-year-to')?.value)   || null
+  let years        = getYears()
   if (yearFrom) years = years.filter(y => y >= yearFrom)
-  if (yearTo) years = years.filter(y => y <= yearTo)
+  if (yearTo)   years = years.filter(y => y <= yearTo)
 
   const filtered = data.filter(d => {
-    let ok = true
-    if (selProduct) ok = ok && d.product === selProduct
-    if (yearFrom) ok = ok && d.year >= yearFrom
-    if (yearTo) ok = ok && d.year <= yearTo
-    return ok
+    if (selProduct && d.product !== selProduct) return false
+    if (yearFrom   && d.year < yearFrom)        return false
+    if (yearTo     && d.year > yearTo)          return false
+    return true
   })
 
-  const prices = filtered.map(d => d.price)
-  const avgAll = avg(prices)
-  const maxAll = prices.length ? Math.max(...prices) : 0
-  const minAll = prices.length ? Math.min(...prices) : 0
+  const prices  = filtered.filter(d=>d.price>0).map(d => d.price)
+  const revenues= filtered.map(d=>d.base_iva)
+  const kgs     = filtered.map(d=>d.kilos)
+  const avgAll  = avg(prices)
+  const maxAll  = prices.length ? Math.max(...prices) : 0
+  const minAll  = prices.length ? Math.min(...prices) : 0
+  const totRev  = sum(revenues)
+  const totKg   = sum(kgs)
+  const hasRev  = totRev > 0
 
-  const yearAvgs = years.map(y => avg(filtered.filter(d => d.year === y).map(d => d.price)))
-  const varPct = yearAvgs.map((v, i) => i === 0 ? 0 : yearAvgs[i-1] ? ((v - yearAvgs[i-1]) / yearAvgs[i-1]) * 100 : 0)
+  const yearAvgs = years.map(y => avg(filtered.filter(d=>d.year===y && d.price>0).map(d=>d.price)))
+  const varPct   = yearAvgs.map((v,i) => i===0 ? 0 : yearAvgs[i-1] ? ((v-yearAvgs[i-1])/yearAvgs[i-1])*100 : 0)
+  const trend    = yearAvgs.length >= 2 ? yearAvgs[yearAvgs.length-1] - yearAvgs[0] : 0
 
-  const trend = yearAvgs.length >= 2 ? yearAvgs[yearAvgs.length-1] - yearAvgs[0] : 0
   document.getElementById('trend-kpis').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Precio medio período</div><div class="kpi-value">${fmt(avgAll)} €</div></div>
-    <div class="kpi-card"><div class="kpi-label">Precio máximo</div><div class="kpi-value">${fmt(maxAll)} €</div></div>
-    <div class="kpi-card"><div class="kpi-label">Precio mínimo</div><div class="kpi-value">${fmt(minAll)} €</div></div>
-    <div class="kpi-card"><div class="kpi-label">Tendencia general</div><div class="kpi-value">${trend >= 0 ? '+' : ''}${fmt(trend)} €</div><div class="kpi-delta ${trend >= 0 ? 'delta-up' : 'delta-down'}">${trend >= 0 ? '▲ Alza' : '▼ Baja'}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Precio medio período</div><div class="kpi-value">${fmtEur(avgAll)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Precio máximo</div><div class="kpi-value">${fmtEur(maxAll)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Precio mínimo</div><div class="kpi-value">${minAll>0?fmtEur(minAll):'—'}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Tendencia general</div><div class="kpi-value">${trend>=0?'+':''}${fmt(trend)} €</div><div class="kpi-delta ${trend>=0?'delta-up':'delta-down'}">${trend>=0?'▲ Alza':'▼ Baja'}</div></div>
+    ${hasRev?`<div class="kpi-card kpi-gold"><div class="kpi-label">Facturación total</div><div class="kpi-value">${fmtEur(totRev)}</div></div>`:''}
+    ${totKg>0?`<div class="kpi-card kpi-blue"><div class="kpi-label">KG totales</div><div class="kpi-value">${fmtKg(totKg)}</div></div>`:''}
   `
 
   const colors = getChartColors()
 
   destroyChart('trendMainChart')
-  const allPoints = []
+  const allPts = []
   for (const y of years) {
-    for (let m = 1; m <= 12; m++) {
-      const pts = filtered.filter(d => d.year === y && d.month === m).map(d => d.price)
-      if (pts.length) allPoints.push({ label: `${MONTHS[m-1]} ${y}`, value: avg(pts) })
+    for (let m=1; m<=12; m++) {
+      const pts = filtered.filter(d=>d.year===y && d.month===m && d.price>0).map(d=>d.price)
+      if (pts.length) allPts.push({ label:`${MONTHS[m-1]} ${y}`, value: avg(pts) })
     }
   }
-  const ctx = document.getElementById('trendMainChart').getContext('2d')
-  charts['trendMainChart'] = new Chart(ctx, {
+  const c1 = document.getElementById('trendMainChart')?.getContext('2d')
+  if (c1) charts['trendMainChart'] = new Chart(c1, {
     type: 'line',
-    data: {
-      labels: allPoints.map(p => p.label),
-      datasets: [{
-        label: selProduct || 'Precio medio',
-        data: allPoints.map(p => p.value),
-        borderColor: '#01696f', backgroundColor: 'rgba(1,105,111,0.07)',
-        borderWidth: 2, tension: 0.35, fill: true, pointRadius: 2
-      }]
-    },
-    options: { ...baseChartOptions(colors, '€'), plugins: { ...baseChartOptions(colors, '€').plugins, tooltip: { callbacks: { label: ctx => ` ${fmt(ctx.raw)} €` } } } }
+    data: { labels: allPts.map(p=>p.label), datasets:[{ label:'Precio medio', data: allPts.map(p=>p.value), borderColor:'#01696f', backgroundColor:'rgba(1,105,111,0.07)', borderWidth:2, tension:0.35, fill:true, pointRadius:2 }] },
+    options: baseChartOptions(colors,'€/kg')
   })
 
   destroyChart('trendMinMaxChart')
-  const maxPerYear = years.map(y => { const pts = filtered.filter(d => d.year === y).map(d => d.price); return pts.length ? Math.max(...pts) : 0 })
-  const minPerYear = years.map(y => { const pts = filtered.filter(d => d.year === y).map(d => d.price); return pts.length ? Math.min(...pts) : 0 })
-  const ctx2 = document.getElementById('trendMinMaxChart').getContext('2d')
-  charts['trendMinMaxChart'] = new Chart(ctx2, {
+  const c2 = document.getElementById('trendMinMaxChart')?.getContext('2d')
+  if (c2) charts['trendMinMaxChart'] = new Chart(c2, {
     type: 'bar',
     data: {
       labels: years,
       datasets: [
-        { label: 'Máximo', data: maxPerYear, backgroundColor: 'rgba(218,113,1,0.7)', borderRadius: 4 },
-        { label: 'Mínimo', data: minPerYear, backgroundColor: 'rgba(1,105,111,0.5)', borderRadius: 4 },
+        { label:'Máximo', data: years.map(y=>{ const p=filtered.filter(d=>d.year===y&&d.price>0).map(d=>d.price); return p.length?Math.max(...p):0 }), backgroundColor:'rgba(218,113,1,0.7)', borderRadius:4 },
+        { label:'Mínimo', data: years.map(y=>{ const p=filtered.filter(d=>d.year===y&&d.price>0).map(d=>d.price); return p.length?Math.min(...p):0 }), backgroundColor:'rgba(1,105,111,0.5)', borderRadius:4 },
       ]
     },
-    options: baseChartOptions(colors, '€')
+    options: { ...baseChartOptions(colors,'€'), plugins:{ legend:{ display:true, labels:{ color: colors.tick } } } }
   })
 
   destroyChart('trendVarChart')
-  const ctx3 = document.getElementById('trendVarChart').getContext('2d')
-  charts['trendVarChart'] = new Chart(ctx3, {
+  const c3 = document.getElementById('trendVarChart')?.getContext('2d')
+  if (c3) charts['trendVarChart'] = new Chart(c3, {
     type: 'bar',
     data: {
       labels: years.slice(1),
-      datasets: [{
-        label: 'Variación %',
-        data: varPct.slice(1),
-        backgroundColor: varPct.slice(1).map(v => v >= 0 ? 'rgba(67,122,34,0.7)' : 'rgba(161,44,123,0.7)'),
-        borderRadius: 4,
-      }]
+      datasets: [{ label:'Variación %', data: varPct.slice(1), backgroundColor: varPct.slice(1).map(v=>v>=0?'rgba(67,122,34,0.7)':'rgba(161,44,123,0.7)'), borderRadius:4 }]
     },
-    options: baseChartOptions(colors, '%')
+    options: baseChartOptions(colors,'%')
   })
+
+  // Volume (KG) per year
+  if (hasRev || totKg>0) {
+    destroyChart('trendVolChart')
+    const c4 = document.getElementById('trendVolChart')?.getContext('2d')
+    if (c4) charts['trendVolChart'] = new Chart(c4, {
+      type: 'bar',
+      data: {
+        labels: years,
+        datasets: [{
+          label: hasRev ? 'Facturación (€)' : 'KG vendidos',
+          data: years.map(y => {
+            const yd = filtered.filter(d=>d.year===y)
+            return hasRev ? sum(yd.map(d=>d.base_iva)) : sum(yd.map(d=>d.kilos))
+          }),
+          backgroundColor: 'rgba(0,100,148,0.6)', borderRadius:4,
+        }]
+      },
+      options: baseChartOptions(colors, hasRev?'€':'kg')
+    })
+  }
 }
 window.renderTrendCharts = renderTrendCharts
 
-// =================== COMPARE ===================
+// =========== COMPARAR ===========
 function renderComparePage() {
   populateAllSelects()
   selectedYears = []
@@ -448,18 +845,21 @@ function renderComparePage() {
 window.renderComparePage = renderComparePage
 
 function renderYearCards() {
-  const years = getYears()
-  document.getElementById('cmp-year-cards').innerHTML = years.map(y => `
-    <div class="compare-year-card ${selectedYears.includes(y) ? 'selected' : ''}" onclick="toggleYear(${y})">
+  const years   = getYears()
+  const hasRev  = data.some(d=>d.base_iva>0)
+  document.getElementById('cmp-year-cards').innerHTML = years.map(y => {
+    const yd  = data.filter(d=>d.year===y)
+    const val = hasRev ? sum(yd.map(d=>d.base_iva)) : avg(yd.filter(d=>d.price>0).map(d=>d.price))
+    return `<div class="compare-year-card ${selectedYears.includes(y)?'selected':''}" onclick="toggleYear(${y})">
       <div class="yr">${y}</div>
-      <div class="avg">${fmt(avg(data.filter(d=>d.year===y).map(d=>d.price)))} € media</div>
-    </div>
-  `).join('')
+      <div class="avg">${hasRev ? fmtEur(val) : fmtEur(val)+' media'}</div>
+    </div>`
+  }).join('')
 }
 
 function toggleYear(y) {
   const i = selectedYears.indexOf(y)
-  if (i > -1) selectedYears.splice(i, 1)
+  if (i > -1) selectedYears.splice(i,1)
   else selectedYears.push(y)
   renderYearCards()
   renderCompare()
@@ -467,373 +867,159 @@ function toggleYear(y) {
 window.toggleYear = toggleYear
 
 function renderCompare() {
-  const selProduct = document.getElementById('cmp-product')?.value
-  const chartCard = document.getElementById('compare-chart-card')
-  const tableCard = document.getElementById('compare-table-card')
+  const selProduct   = document.getElementById('cmp-product')?.value
+  const chartCard    = document.getElementById('compare-chart-card')
+  const tableCard    = document.getElementById('compare-table-card')
+  if (selectedYears.length < 2) { chartCard.style.display='none'; tableCard.style.display='none'; return }
+  chartCard.style.display = ''; tableCard.style.display = ''
 
-  if (selectedYears.length < 2) {
-    chartCard.style.display = 'none'
-    tableCard.style.display = 'none'
-    return
-  }
-  chartCard.style.display = ''
-  tableCard.style.display = ''
-
-  const colors = getChartColors()
+  const colors  = getChartColors()
+  const hasRev  = data.some(d=>d.base_iva>0)
   destroyChart('compareChart')
-  const datasets = selectedYears.sort().map((y, i) => {
-    const monthData = Array.from({length:12}, (_,mi) => {
-      const pts = data.filter(d => d.year === y && d.month === mi+1 && (!selProduct || d.product === selProduct)).map(d => d.price)
-      return avg(pts) || null
+  const datasets = selectedYears.sort().map((y,i) => {
+    const mdata = Array.from({length:12},(_,mi) => {
+      const pts = data.filter(d=>d.year===y && d.month===mi+1 && (!selProduct||d.product===selProduct))
+      return hasRev ? sum(pts.map(d=>d.base_iva)) : avg(pts.filter(d=>d.price>0).map(d=>d.price)) || null
     })
-    return { label: String(y), data: monthData, borderColor: CHART_COLORS[i % CHART_COLORS.length], backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '15', borderWidth: 2, tension: 0.35, fill: false, pointRadius: 4 }
+    return { label: String(y), data:mdata, borderColor:CHART_COLORS[i%CHART_COLORS.length], backgroundColor:CHART_COLORS[i%CHART_COLORS.length]+'15', borderWidth:2, tension:0.35, fill:false, pointRadius:4 }
   })
-
-  const ctx = document.getElementById('compareChart').getContext('2d')
-  charts['compareChart'] = new Chart(ctx, {
+  const c = document.getElementById('compareChart')?.getContext('2d')
+  if (c) charts['compareChart'] = new Chart(c, {
     type: 'line',
     data: { labels: MONTHS, datasets },
-    options: { ...baseChartOptions(colors, '€'), plugins: { legend: { display: true, labels: { color: colors.tick, font:{size:12} } } } }
+    options: { ...baseChartOptions(colors, hasRev?'€':'€/kg'), plugins:{ legend:{ display:true, labels:{ color: colors.tick, font:{size:12} } } } }
   })
 
-  const thead = `<thead><tr><th>Año</th><th>Media</th><th>Máximo</th><th>Mínimo</th><th>Variación vs. anterior</th></tr></thead>`
   let prevAvg = null
-  const rows = selectedYears.sort().map(y => {
-    const pts = data.filter(d => d.year === y && (!selProduct || d.product === selProduct)).map(d => d.price)
-    const a = avg(pts); const mx = Math.max(...pts); const mn = Math.min(...pts)
-    const pct = prevAvg ? ((a - prevAvg) / prevAvg) * 100 : null
+  const rows  = selectedYears.sort().map(y => {
+    const pts = data.filter(d=>d.year===y && (!selProduct||d.product===selProduct))
+    const a   = avg(pts.filter(d=>d.price>0).map(d=>d.price))
+    const rev = sum(pts.map(d=>d.base_iva))
+    const kg  = sum(pts.map(d=>d.kilos))
+    const mx  = pts.filter(d=>d.price>0).length ? Math.max(...pts.filter(d=>d.price>0).map(d=>d.price)) : 0
+    const mn  = pts.filter(d=>d.price>0).length ? Math.min(...pts.filter(d=>d.price>0).map(d=>d.price)) : 0
+    const pct = prevAvg && a ? ((a-prevAvg)/prevAvg)*100 : null
     prevAvg = a
     return `<tr>
       <td><strong>${y}</strong></td>
-      <td>${fmt(a)} €</td><td>${fmt(mx)} €</td><td>${fmt(mn)} €</td>
-      <td>${pct !== null ? `<span class="badge ${pct >= 0 ? 'badge-up':'badge-down'}">${fmtPct(pct)}</span>` : '—'}</td>
+      <td>${fmtEur(a)}/kg</td>
+      <td>${fmtEur(mx)}</td><td>${mn>0?fmtEur(mn):'—'}</td>
+      ${hasRev?`<td class="td-total">${fmtEur(rev)}</td>`:''}
+      ${kg>0?`<td class="td-num">${fmtKg(kg)}</td>`:''}
+      <td>${pct!==null?`<span class="badge ${pct>=0?'badge-up':'badge-down'}">${fmtPct(pct)}</span>`:'—'}</td>
     </tr>`
   })
+  const thead = `<thead><tr><th>Año</th><th>Precio medio</th><th>Máximo</th><th>Mínimo</th>${hasRev?'<th>Facturación</th>':''}${data.some(d=>d.kilos>0)?'<th>KG</th>':''}<th>Variación</th></tr></thead>`
   document.getElementById('compare-stats-table').innerHTML = thead + `<tbody>${rows.join('')}</tbody>`
 }
 window.renderCompare = renderCompare
 
-// =================== PREDICTIONS ===================
+// =========== PREDICCIONES ===========
 function computePrediction(product) {
-  const filtered = product ? data.filter(d => d.product === product) : data
+  const filtered = product ? data.filter(d=>d.product===product) : data
   if (filtered.length < 6) return null
-
-  const years = [...new Set(filtered.map(d => d.year))].sort((a,b) => a-b)
-  const months = [...new Set(filtered.filter(d => d.month).map(d => d.month))].sort((a,b) => a-b)
-
-  if (years.length < 2 || months.length < 2) return null
-
-  const yearAvgs = years.map(y => {
-    const pts = filtered.filter(d => d.year === y).map(d => d.price)
-    return { year: y, avg: avg(pts) }
-  })
-
-  const growthRates = []
-  for (let i = 1; i < yearAvgs.length; i++) {
-    if (yearAvgs[i-1].avg > 0) {
-      growthRates.push((yearAvgs[i].avg - yearAvgs[i-1].avg) / yearAvgs[i-1].avg)
-    }
+  const years = [...new Set(filtered.map(d=>d.year))].sort((a,b)=>a-b)
+  if (years.length < 2) return null
+  const yearAvgs  = years.map(y => ({ year:y, avg: avg(filtered.filter(d=>d.year===y&&d.price>0).map(d=>d.price)) }))
+  const growth    = []
+  for (let i=1; i<yearAvgs.length; i++) {
+    if (yearAvgs[i-1].avg>0) growth.push((yearAvgs[i].avg-yearAvgs[i-1].avg)/yearAvgs[i-1].avg)
   }
-  const avgGrowth = growthRates.length ? growthRates.reduce((a,b) => a+b, 0) / growthRates.length : 0
-
-  const monthlyFactors = {}
+  const avgGrowth = growth.length ? sum(growth)/growth.length : 0
+  const months    = [...new Set(filtered.filter(d=>d.month).map(d=>d.month))].sort((a,b)=>a-b)
+  const mFactors  = {}
+  const overall   = avg(filtered.filter(d=>d.price>0).map(d=>d.price))
   for (const m of months) {
-    const vals = filtered.filter(d => d.month === m).map(d => d.price)
-    const monthAvg = avg(vals)
-    const valsAll = filtered.map(d => d.price)
-    const overallAvg = avg(valsAll)
-    monthlyFactors[m] = overallAvg > 0 ? monthAvg / overallAvg : 1
+    const mv = avg(filtered.filter(d=>d.month===m && d.price>0).map(d=>d.price))
+    mFactors[m] = overall>0 ? mv/overall : 1
   }
-
-  const lastYear = Math.max(...years)
-  const lastYearData = filtered.filter(d => d.year === lastYear)
-  const lastYearAvg = yearAvgs.find(y => y.year === lastYear)?.avg || avg(lastYearData.map(d => d.price))
-
-  const predictions = []
-  let lastMonth = Math.max(...months)
-  let predYear = lastYear
-  for (let i = 0; i < 12; i++) {
-    lastMonth++
-    if (lastMonth > 12) { lastMonth = 1; predYear++ }
-    const yearsAhead = predYear - lastYear
-    const trendFactor = 1 + avgGrowth * yearsAhead
-    const seasonalFactor = monthlyFactors[lastMonth] || 1
-    const predPrice = lastYearAvg * trendFactor * seasonalFactor
-    predictions.push({ year: predYear, month: lastMonth, price: Math.round(predPrice * 1000) / 1000 })
+  const lastYear    = Math.max(...years)
+  const lastYearAvg = yearAvgs.find(y=>y.year===lastYear)?.avg || 0
+  const preds       = []
+  let lm = Math.max(...months.length ? months : [12])
+  let py = lastYear
+  for (let i=0; i<12; i++) {
+    lm++; if (lm>12) { lm=1; py++ }
+    const yearsAhead = py - lastYear
+    const pred = lastYearAvg * (1 + avgGrowth*yearsAhead) * (mFactors[lm]||1)
+    preds.push({ year:py, month:lm, price: Math.round(pred*1000)/1000 })
   }
-
-  return { predictions, avgGrowth, lastYearAvg, lastYear, monthlyFactors }
+  return { preds, avgGrowth, lastYearAvg, lastYear }
 }
 
 function renderPredictions() {
+  populateAllSelects()
   const selProduct = document.getElementById('pred-product')?.value
-
-  populateAllSelects();
-  ['pred-product'].forEach(id => {
-    const el = document.getElementById(id)
-    if (el) {
-      const products = getProducts()
-      el.innerHTML = `<option value="">Todos los productos</option>` + products.map(p => `<option value="${p}">${p}</option>`).join('')
-      if (selProduct) el.value = selProduct
-    }
-  })
-
-  const result = computePrediction(selProduct || null)
-  const colors = getChartColors()
+  const result     = computePrediction(selProduct||null)
+  const colors     = getChartColors()
 
   if (!result) {
-    document.getElementById('pred-kpis').innerHTML = '<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Sin datos suficientes</div><div class="kpi-value" style="font-size:var(--text-base)">Necesitas al menos 2 años de datos con meses para generar predicciones</div></div>'
+    document.getElementById('pred-kpis').innerHTML = `<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Sin datos suficientes</div><div class="kpi-value" style="font-size:var(--text-base)">Necesitas al menos 2 años de datos para generar predicciones</div></div>`
     destroyChart('predChart')
     document.getElementById('pred-table').innerHTML = ''
     return
   }
 
-  const { predictions, avgGrowth, lastYearAvg, lastYear } = result
-
-  const monthsToShow = Math.min(24, 12 + predictions.length)
-  const filtered = selProduct ? data.filter(d => d.product === selProduct) : data
-  const recentMonths = []
-  const sorted = [...filtered].filter(d => d.month).sort((a,b) => (a.year - b.year) || (a.month - b.month))
-  const cutoffYear = lastYear - 2
-  for (const d of sorted) {
-    if (d.year > cutoffYear || (d.year === cutoffYear && d.month >= 1)) {
-      recentMonths.push(d)
-    }
+  const { preds, avgGrowth, lastYearAvg, lastYear } = result
+  const filtered = selProduct ? data.filter(d=>d.product===selProduct) : data
+  const sorted   = [...filtered].filter(d=>d.month&&d.price>0).sort((a,b)=>(a.year-b.year)||(a.month-b.month))
+  const cutoff   = lastYear - 2
+  const recent   = sorted.filter(d=>d.year>=cutoff)
+  const allLabels=[]; const allActual=[]; const allPred=[]
+  const seen = new Set()
+  for (const d of recent) {
+    const k = `${d.year}-${String(d.month).padStart(2,'0')}`
+    if (!seen.has(k)) { seen.add(k); allLabels.push(`${MONTHS[d.month-1]} ${d.year}`); allActual.push(d.price); allPred.push(null) }
   }
-
-  const labelSet = new Set()
-  const allLabels = []
-  const allActual = []
-  const allPred = []
-
-  for (const d of recentMonths) {
-    const key = `${d.year}-${String(d.month).padStart(2,'0')}`
-    if (!labelSet.has(key)) {
-      labelSet.add(key)
-      allLabels.push(`${MONTHS[(d.month||1)-1]} ${d.year}`)
-      allActual.push(d.price)
-      allPred.push(null)
-    }
-  }
-  for (const p of predictions) {
-    const key = `${p.year}-${String(p.month).padStart(2,'0')}`
-    if (!labelSet.has(key)) {
-      labelSet.add(key)
-      allLabels.push(`${MONTHS[p.month-1]} ${p.year}`)
-      allActual.push(null)
-      allPred.push(p.price)
-    }
+  for (const p of preds) {
+    const k = `${p.year}-${String(p.month).padStart(2,'0')}`
+    if (!seen.has(k)) { seen.add(k); allLabels.push(`${MONTHS[p.month-1]} ${p.year}`); allActual.push(null); allPred.push(p.price) }
   }
 
   destroyChart('predChart')
-  const ctx = document.getElementById('predChart')?.getContext('2d')
-  if (ctx) {
-    charts['predChart'] = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: allLabels,
-        datasets: [
-          {
-            label: 'Real',
-            data: allActual,
-            borderColor: '#01696f',
-            backgroundColor: 'rgba(1,105,111,0.08)',
-            borderWidth: 2,
-            pointRadius: 3,
-            pointBackgroundColor: '#01696f',
-            tension: 0.3,
-            fill: true,
-            spanGaps: false
-          },
-          {
-            label: 'Predicción',
-            data: allPred,
-            borderColor: '#da7101',
-            backgroundColor: 'rgba(218,113,1,0.06)',
-            borderWidth: 2,
-            borderDash: [6, 3],
-            pointRadius: 3,
-            pointBackgroundColor: '#da7101',
-            pointStyle: 'rectRot',
-            tension: 0.3,
-            fill: true,
-            spanGaps: true
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: true, labels: { color: colors.tick, font: { size: 12 } } },
-          tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.raw)} €` } }
-        },
-        scales: {
-          x: { grid: { color: colors.grid }, ticks: { color: colors.tick, font: { size: 10 } } },
-          y: { grid: { color: colors.grid }, ticks: { color: colors.tick, font: { size: 11 }, callback: v => `${v} €` } }
-        }
-      }
-    })
-  }
+  const c = document.getElementById('predChart')?.getContext('2d')
+  if (c) charts['predChart'] = new Chart(c, {
+    type: 'line',
+    data: {
+      labels: allLabels,
+      datasets: [
+        { label:'Real', data:allActual, borderColor:'#01696f', backgroundColor:'rgba(1,105,111,0.08)', borderWidth:2, pointRadius:3, tension:0.3, fill:true, spanGaps:false },
+        { label:'Predicción', data:allPred, borderColor:'#da7101', backgroundColor:'rgba(218,113,1,0.06)', borderWidth:2, borderDash:[6,3], pointRadius:3, tension:0.3, fill:true, spanGaps:true }
+      ]
+    },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:true, labels:{ color:colors.tick, font:{size:12} } }, tooltip:{ callbacks:{ label: c=>`${c.dataset.label}: ${fmtEur(c.raw)}` } } }, scales:{ x:{ grid:{color:colors.grid}, ticks:{color:colors.tick,font:{size:10}} }, y:{ grid:{color:colors.grid}, ticks:{color:colors.tick,font:{size:11}, callback:v=>`${v} €`} } } }
+  })
 
-  const firstPred = predictions[0]
-  const lastPred = predictions[predictions.length - 1]
-  const midPred = predictions[Math.min(5, predictions.length - 1)]
-  const change6 = firstPred && midPred ? ((midPred.price - firstPred.price) / firstPred.price) * 100 : 0
-  const change12 = firstPred && lastPred ? ((lastPred.price - firstPred.price) / firstPred.price) * 100 : 0
+  const mid = preds[Math.min(5,preds.length-1)]
+  const last= preds[preds.length-1]
+  const ch6 = preds[0]&&mid ? ((mid.price-preds[0].price)/preds[0].price)*100 : 0
+  const ch12= preds[0]&&last? ((last.price-preds[0].price)/preds[0].price)*100 : 0
 
   document.getElementById('pred-kpis').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Precio actual (${lastYear})</div><div class="kpi-value">${fmt(lastYearAvg)} €</div></div>
-    <div class="kpi-card"><div class="kpi-label">Tendencia anual</div><div class="kpi-value">${fmtPct(avgGrowth)}</div><div class="kpi-delta ${avgGrowth >= 0 ? 'delta-up' : 'delta-down'}">${avgGrowth >= 0 ? '▲' : '▼'} Proyección</div></div>
-    <div class="kpi-card"><div class="kpi-label">Estimado 6 meses</div><div class="kpi-value">${fmt(midPred?.price || 0)} €</div><div class="kpi-delta ${change6 >= 0 ? 'delta-up' : 'delta-down'}">${fmtPct(change6)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Estimado 12 meses</div><div class="kpi-value">${fmt(lastPred?.price || 0)} €</div><div class="kpi-delta ${change12 >= 0 ? 'delta-up' : 'delta-down'}">${fmtPct(change12)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Precio actual (${lastYear})</div><div class="kpi-value">${fmtEur(lastYearAvg)}/kg</div></div>
+    <div class="kpi-card"><div class="kpi-label">Tendencia anual</div><div class="kpi-value">${fmtPct(avgGrowth*100)}</div><div class="kpi-delta ${avgGrowth>=0?'delta-up':'delta-down'}">${avgGrowth>=0?'▲':'▼'} Proyección</div></div>
+    <div class="kpi-card"><div class="kpi-label">Estimado 6 meses</div><div class="kpi-value">${fmtEur(mid?.price||0)}/kg</div><div class="kpi-delta ${ch6>=0?'delta-up':'delta-down'}">${fmtPct(ch6)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Estimado 12 meses</div><div class="kpi-value">${fmtEur(last?.price||0)}/kg</div><div class="kpi-delta ${ch12>=0?'delta-up':'delta-down'}">${fmtPct(ch12)}</div></div>
   `
 
-  const thead = `<thead><tr><th>Mes</th><th>Precio estimado</th><th>Vs. mes anterior</th><th>Vs. mismo mes año pasado</th></tr></thead>`
-  let prevPrice = null
-  const sameMonthLastYear = {}
-  if (selProduct) {
-    for (const p of predictions) {
-      const same = data.filter(d => d.product === selProduct && d.year === p.year - 1 && d.month === p.month).map(d => d.price)
-      if (same.length) sameMonthLastYear[`${p.month}`] = avg(same)
-    }
-  }
-
-  const rows = predictions.map(p => {
-    const actualPrev = prevPrice
-    prevPrice = p.price
-    const vsPrev = actualPrev ? ((p.price - actualPrev) / actualPrev) * 100 : null
-    const vsYear = sameMonthLastYear[`${p.month}`] || null
-    const vsYearPct = vsYear ? ((p.price - vsYear) / vsYear) * 100 : null
+  let prevP = null
+  const rows = preds.map(p => {
+    const vsPrev = prevP ? ((p.price-prevP)/prevP)*100 : null
+    prevP = p.price
     return `<tr>
       <td><strong>${MONTH_NAMES[p.month-1]} ${p.year}</strong></td>
-      <td style="font-variant-numeric:tabular-nums; color:var(--color-orange); font-weight:600">${fmt(p.price)} €</td>
-      <td>${vsPrev !== null ? `<span class="badge ${vsPrev >= 0 ? 'badge-up' : 'badge-down'}">${fmtPct(vsPrev)}</span>` : '—'}</td>
-      <td>${vsYearPct !== null ? `<span class="badge ${vsYearPct >= 0 ? 'badge-up' : 'badge-down'}">${fmtPct(vsYearPct)}</span>` : '—'}</td>
+      <td style="color:var(--color-orange);font-weight:600">${fmtEur(p.price)}/kg</td>
+      <td>${vsPrev!==null?`<span class="badge ${vsPrev>=0?'badge-up':'badge-down'}">${fmtPct(vsPrev)}</span>`:'—'}</td>
     </tr>`
   }).join('')
-  document.getElementById('pred-table').innerHTML = thead + `<tbody>${rows}</tbody>`
+  document.getElementById('pred-table').innerHTML = `<thead><tr><th>Mes</th><th>Precio estimado</th><th>Vs. mes anterior</th></tr></thead><tbody>${rows}</tbody>`
 }
 window.renderPredictions = renderPredictions
 
-// =================== TABLE ===================
-function renderTable() {
-  const search = document.getElementById('table-search')?.value.toLowerCase() || ''
-  const yearF = parseInt(document.getElementById('table-year-filter')?.value) || null
-  const catF = document.getElementById('table-cat-filter')?.value || ''
-
-  let rows = data.filter(d => {
-    let ok = true
-    if (search) ok = ok && (d.product.toLowerCase().includes(search) || d.category.toLowerCase().includes(search))
-    if (yearF) ok = ok && d.year === yearF
-    if (catF) ok = ok && d.category === catF
-    return ok
-  })
-
-  rows = rows.sort((a,b) => b.year - a.year || a.month - b.month)
-
-  const tbody = document.getElementById('table-body')
-  if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: var(--space-10); color: var(--color-text-muted)">No se encontraron registros</td></tr>`
-  } else {
-    tbody.innerHTML = rows.slice(0, 200).map(d => {
-      const prevY = data.find(r => r.product === d.product && r.year === d.year - 1 && r.month === d.month)
-      let delta = '', badgeCls = 'badge-flat'
-      if (prevY) {
-        const pct = ((d.price - prevY.price) / prevY.price) * 100
-        delta = fmtPct(pct)
-        badgeCls = pct > 0.5 ? 'badge-up' : pct < -0.5 ? 'badge-down' : 'badge-flat'
-      }
-      return `<tr>
-        <td><strong>${d.product}</strong></td>
-        <td>${d.category}</td>
-        <td>${d.year}</td>
-        <td>${d.month ? MONTH_NAMES[d.month-1] : '—'}</td>
-        <td style="font-variant-numeric: tabular-nums">${fmt(d.price)} €</td>
-        <td>${d.unit}</td>
-        <td>${delta ? `<span class="badge ${badgeCls}">${delta}</span>` : '—'}</td>
-        <td><button class="btn-delete" onclick="deleteRecord(${d.id})" title="Eliminar">✕</button></td>
-      </tr>`
-    }).join('')
-  }
-  document.getElementById('table-count').textContent = `Mostrando ${Math.min(rows.length, 200)} de ${rows.length} registros`
-}
-window.renderTable = renderTable
-
-async function deleteRecord(id) {
-  try {
-    await dbDeleteRecord(id)
-    data = data.filter(d => d.id !== id)
-    renderTable()
-    showToast('Registro eliminado')
-  } catch (e) {
-    console.error(e)
-    showToast('⚠ Error al eliminar')
-  }
-}
-window.deleteRecord = deleteRecord
-
-// =================== SEARCH ===================
-function initSearch() {
-  populateAllSelects()
-}
-window.initSearch = initSearch
-
-function doSearch() {
-  const product = document.getElementById('search-product').value
-  const year = parseInt(document.getElementById('search-year').value) || null
-  const month = parseInt(document.getElementById('search-month').value) || null
-
-  let results = data.filter(d => {
-    let ok = true
-    if (product) ok = ok && d.product === product
-    if (year) ok = ok && d.year === year
-    if (month) ok = ok && d.month === month
-    return ok
-  })
-
-  const container = document.getElementById('search-results')
-  if (!results.length) {
-    container.innerHTML = `<div class="card"><div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><h3>Sin resultados</h3><p>Prueba con otros filtros de búsqueda</p></div></div>`
-    return
-  }
-
-  const avgPrice = avg(results.map(d => d.price))
-  const maxPrice = Math.max(...results.map(d => d.price))
-  const minPrice = Math.min(...results.map(d => d.price))
-
-  container.innerHTML = `
-    <div class="grid-3" style="margin-bottom: var(--space-6)">
-      <div class="kpi-card"><div class="kpi-label">Precio medio</div><div class="kpi-value">${fmt(avgPrice)} €</div></div>
-      <div class="kpi-card"><div class="kpi-label">Precio máximo</div><div class="kpi-value">${fmt(maxPrice)} €</div></div>
-      <div class="kpi-card"><div class="kpi-label">Precio mínimo</div><div class="kpi-value">${fmt(minPrice)} €</div></div>
-    </div>
-    <div class="table-wrap">
-      <table class="data-table">
-        <thead><tr><th>Producto</th><th>Categoría</th><th>Año</th><th>Mes</th><th>Precio</th><th>Unidad</th><th>Notas</th></tr></thead>
-        <tbody>
-          ${results.sort((a,b) => b.year-a.year || a.month-b.month).slice(0, 100).map(d => `
-            <tr>
-              <td><strong>${d.product}</strong></td>
-              <td>${d.category}</td>
-              <td>${d.year}</td>
-              <td>${d.month ? MONTH_NAMES[d.month-1] : '—'}</td>
-              <td style="font-variant-numeric:tabular-nums">${fmt(d.price)} €</td>
-              <td>${d.unit}</td>
-              <td style="color:var(--color-text-muted)">${d.notes || '—'}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-    <p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-3)">${results.length} resultados encontrados</p>
-  `
-}
-window.doSearch = doSearch
-
-// =================== ADD RECORD ===================
-function openAddModal() { document.getElementById('add-modal').classList.add('open'); document.body.style.overflow = 'hidden' }
-function closeModal(id) {
+// =========== ADD RECORD ===========
+function openAddModal()  { document.getElementById('add-modal').classList.add('open'); document.body.style.overflow='hidden' }
+function openImportModal(){ document.getElementById('import-modal').classList.add('open'); document.body.style.overflow='hidden' }
+function closeModal(id)  {
   document.getElementById(id).classList.remove('open')
   document.body.style.overflow = ''
   if (id === 'import-modal') {
@@ -842,105 +1028,124 @@ function closeModal(id) {
     document.getElementById('preview-section').style.display = 'none'
     document.getElementById('file-name').textContent = ''
     document.getElementById('file-input').value = ''
+    document.getElementById('import-progress').style.display = 'none'
   }
 }
-function openImportModal() { document.getElementById('import-modal').classList.add('open'); document.body.style.overflow = 'hidden' }
 window.openAddModal = openAddModal
-window.closeModal = closeModal
 window.openImportModal = openImportModal
+window.closeModal = closeModal
 
 async function addRecord() {
-  const product = document.getElementById('m-product').value.trim()
-  const category = document.getElementById('m-category').value.trim() || 'Sin categoría'
-  const price = parseFloat(document.getElementById('m-price').value)
-  const unit = document.getElementById('m-unit').value.trim() || '€/ud'
-  const year = parseInt(document.getElementById('m-year').value)
-  const month = parseInt(document.getElementById('m-month').value) || null
-  const notes = document.getElementById('m-notes').value.trim()
+  const get = id => document.getElementById(id)?.value?.trim() || ''
+  const product  = get('m-product')
+  const category = get('m-category') || detectCategory(product) || 'Sin categoría'
+  const price    = parseFloat(get('m-price').replace(',','.'))
+  const year     = parseInt(get('m-year'))
+  const month    = parseInt(get('m-month')) || null
+  if (!product || isNaN(price) || isNaN(year)) { showToast('⚠ Rellena producto, precio y año','error'); return }
 
-  if (!product || isNaN(price) || isNaN(year)) {
-    showToast('⚠ Rellena producto, precio y año'); return
+  const record = {
+    product, category, price, unit: get('m-unit')||'kg', year, month,
+    notes: get('m-notes'),
+    cliente: get('m-cliente'), denominacion_social: get('m-denso'),
+    referencia: get('m-ref'),
+    kilos: parseFloat(get('m-kilos'))||0,
+    base_iva: parseFloat(get('m-baseiva'))||0,
+    documento: get('m-doc'), factura: get('m-factura'),
   }
   try {
-    const saved = await dbAddRecord({ product, category, price, unit, year, month, notes })
+    const saved = await dbAddRecord(record)
     if (saved) data.push(saved)
     closeModal('add-modal')
     populateAllSelects()
     showToast('✓ Registro añadido')
-    ;['m-product','m-category','m-price','m-unit','m-year','m-notes'].forEach(id => document.getElementById(id).value = '')
-    document.getElementById('m-month').value = ''
-  } catch (e) {
-    console.error(e)
-    showToast('⚠ Error al guardar')
-  }
+    document.querySelectorAll('#add-modal .form-input, #add-modal .form-select').forEach(el => el.value='')
+  } catch(e) { console.error(e); showToast('⚠ Error al guardar','error') }
 }
 window.addRecord = addRecord
 
-// =================== EXPORT / IMPORT ===================
+async function deleteRecord(id) {
+  try {
+    await dbDeleteRecord(id)
+    data = data.filter(d => d.id !== id)
+    rerenderCurrentPage()
+    showToast('Registro eliminado')
+  } catch(e) { console.error(e); showToast('⚠ Error al eliminar','error') }
+}
+window.deleteRecord = deleteRecord
+
+// =========== EXPORT ===========
 function exportCSV() {
-  const headers = 'producto,categoria,precio,unidad,año,mes,notas'
-  const rows = data.map(d => `${d.product},${d.category},${d.price},${d.unit},${d.year},${d.month||''},${d.notes||''}`)
-  const csv = [headers, ...rows].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv' })
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  a.download = 'precios.csv'
-  a.click()
+  const headers = 'fecha,documento,cliente,denominacion_social,referencia,producto,categoria,kilos,pvp,base_iva,ano,mes,notas'
+  const rows    = data.map(d =>
+    [d.year+(d.month?'/'+d.month:''),d.documento,d.cliente,d.denominacion_social,d.referencia,d.product,d.category,d.kilos,d.price,d.base_iva,d.year,d.month||'',d.notes]
+    .map(v=>String(v).includes(',')?`"${v}"`:v).join(',')
+  )
+  const blob = new Blob([[headers,...rows].join('\n')], { type:'text/csv;charset=utf-8;' })
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='ventas_export.csv'; a.click()
   showToast('✓ CSV exportado')
 }
 window.exportCSV = exportCSV
 
+// =========== IMPORT ===========
 const COLUMN_AUTO_MAP = {
-  producto: ['articulo', 'producto', 'product', 'artículo', 'referencia'],
-  categoria: ['categoria', 'categoría', 'category', 'departamento', 'sección', 'seccion', 'familia'],
-  precio: ['pvp', 'precio', 'price', 'coste', 'importe', 'baseiva', 'base iva'],
-  unidad: ['unidad', 'unit', 'unid', 'kilos', 'litros', 'medida', 'um', 'kg'],
-  año: ['año', 'ano', 'year', 'ejercicio'],
-  mes: ['mes', 'month'],
-  notas: ['notas', 'notes', 'observaciones', 'comentario', 'comentarios']
+  producto:            ['articulo','artículo','producto','product','descripcion','descripción','nombre producto'],
+  categoria:           ['categoria','categoría','category','familia','tipo','departamento'],
+  precio:              ['pvp','precio','price','precio unitario'],
+  unidad:              ['unidad','unit','um','medida'],
+  año:                 ['año','ano','year','ejercicio','fecha','fecha albarán'],
+  mes:                 ['mes','month','fecha'],
+  notas:               ['notas','notes','observaciones','comentarios','matrícula','matricula'],
+  cliente:             ['cliente','client','cod. cliente','código cliente','codigo cliente'],
+  denominacion_social: ['denominación social','denominacion social','empresa','razon social','razón social','nombre cliente','nombre empresa'],
+  referencia:          ['referencia','ref.','ref','cod. articulo','código artículo','codigo articulo'],
+  kilos:               ['kilos','kg','kgs','peso','kilos netos'],
+  unidades:            ['unid','unidades','units','cantidad','bultos'],
+  litros:              ['litros','litres','liters','lts'],
+  base_iva:            ['base iva','baseiva','importe total','total','base imponible'],
+  tarifa:              ['tarifa','rate'],
+  coste_adic:          ['costeadic','coste adic','coste adicional'],
+  documento:           ['documento','doc.','doc','albarán','albaran'],
+  factura:             ['factura','invoice','nº factura','num. factura'],
+  fecha_fra:           ['fecha fra.','fecha fra','fecha factura','fechafra'],
+  lin:                 ['lin','línea','linea','nº línea'],
 }
 
 let importData = null
 
 function detectDelimiter(line) {
-  const commaCount = (line.match(/,/g) || []).length
-  const tabCount = (line.match(/\t/g) || []).length
-  return tabCount > commaCount ? '\t' : ','
+  const tabs   = (line.match(/\t/g)||[]).length
+  const commas = (line.match(/,/g)||[]).length
+  return tabs > commas ? '\t' : ','
 }
 
 function parseNumber(str) {
-  const s = String(str).trim()
+  const s = String(str).trim().replace(/\s/g,'')
   if (!s) return NaN
-  let normalized = s
-  if (s.includes(',') && !s.includes('.')) {
-    normalized = s.replace(',', '.')
-  } else if (s.includes(',') && s.includes('.')) {
-    normalized = s.replace(/\./g, '').replace(',', '.')
-  }
-  return parseFloat(normalized)
+  if (s.includes(',') && !s.includes('.')) return parseFloat(s.replace(',','.'))
+  if (s.includes(',') && s.includes('.'))  return parseFloat(s.replace(/\./g,'').replace(',','.'))
+  return parseFloat(s)
 }
 
 function extractYear(val) {
   const s = String(val).trim()
-  const n = parseInt(s)
-  if (!isNaN(n) && s.length >= 4) return n
   const m = s.match(/(\d{4})/)
   return m ? parseInt(m[1]) : NaN
 }
 
 function extractMonth(val) {
   const s = String(val).trim()
+  // DD/MM/YYYY → month is second part
+  const d = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/)
+  if (d) return parseInt(d[2])
   const n = parseInt(s)
-  if (!isNaN(n) && n >= 1 && n <= 12 && s.length <= 2) return n
-  const m = s.match(/^(\d{2})\/(\d{2})/)
-  return m ? parseInt(m[2]) : null
+  if (!isNaN(n) && n>=1 && n<=12 && s.length<=2) return n
+  return null
 }
 
 async function decodeText(buf) {
-  let text = new TextDecoder('utf-8', { fatal: false }).decode(buf)
-  if (text.includes('\uFFFD')) {
-    text = new TextDecoder('windows-1252').decode(buf)
-  }
+  let text = new TextDecoder('utf-8',{fatal:false}).decode(buf)
+  if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf)
   return text
 }
 
@@ -948,211 +1153,190 @@ async function handleFileSelect(e) {
   const file = e.target.files[0]
   if (!file) return
   document.getElementById('file-name').textContent = file.name
-  document.getElementById('column-mapping').style.display = 'none'
+  document.getElementById('column-mapping').style.display  = 'none'
   document.getElementById('preview-section').style.display = 'none'
 
   const ext = file.name.split('.').pop().toLowerCase()
   let headers = [], rows = [], delimiter = ','
 
   try {
-    if (['xlsx', 'xls'].includes(ext) && typeof XLSX !== 'undefined') {
+    if (['xlsx','xls'].includes(ext) && typeof XLSX !== 'undefined') {
       const buf = await file.arrayBuffer()
-      const wb = XLSX.read(buf, { type: 'array' })
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
-      if (data.length < 2) { showToast('⚠ El archivo no tiene datos'); return }
-      headers = data[0].map(h => String(h).trim())
-      rows = data.slice(1)
-        .filter(r => r.some(c => String(c).trim()))
-        .map(r => { while (r.length < headers.length) r.push(''); return r.map(c => String(c).trim()) })
+      const wb  = XLSX.read(buf, { type:'array' })
+      const ws  = wb.Sheets[wb.SheetNames[0]]
+      const raw = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' })
+      if (raw.length < 2) { showToast('⚠ El archivo no tiene datos','error'); return }
+      headers = raw[0].map(h => String(h).trim())
+      rows    = raw.slice(1).filter(r=>r.some(c=>String(c).trim())).map(r=>{ while(r.length<headers.length)r.push(''); return r.map(c=>String(c).trim()) })
     } else {
-      const buf = await file.arrayBuffer()
+      const buf  = await file.arrayBuffer()
       const text = await decodeText(buf)
-      const lines = text.split('\n').filter(l => l.trim())
-      if (lines.length < 2) { showToast('⚠ El archivo no tiene datos'); return }
+      const lines= text.split('\n').filter(l=>l.trim())
+      if (lines.length < 2) { showToast('⚠ El archivo no tiene datos','error'); return }
       delimiter = detectDelimiter(lines[0])
-      headers = lines[0].split(delimiter).map(h => h.trim())
-      rows = lines.slice(1).map(l => {
-        const parts = l.split(delimiter).map(c => c.trim())
-        while (parts.length < headers.length) parts.push('')
-        return parts
-      })
+      headers   = lines[0].split(delimiter).map(h=>h.trim().replace(/^"|"$/g,''))
+      rows      = lines.slice(1).map(l=>{ const p=l.split(delimiter).map(c=>c.trim().replace(/^"|"$/g,'')); while(p.length<headers.length)p.push(''); return p })
     }
-  } catch (err) {
-    console.error(err)
-    showToast('⚠ Error al leer el archivo')
-    return
-  }
+  } catch(err) { console.error(err); showToast('⚠ Error al leer el archivo','error'); return }
 
   importData = { headers, rows, delimiter }
   showPreview(importData)
-
   const map = buildMapping(headers)
   applyMappingToUI(map, headers)
 
-  if (map.product !== null && map.price !== null) {
+  if (map.producto !== null && (map.precio !== null || map.base_iva !== null)) {
     await executeImport()
-    return
+  } else {
+    document.getElementById('column-mapping').style.display = 'block'
   }
-  document.getElementById('column-mapping').style.display = 'block'
 }
 window.handleFileSelect = handleFileSelect
 
 function buildMapping(headers) {
-  const fieldIds = ['product', 'category', 'price', 'unit', 'year', 'month', 'notes']
-  const fieldNames = ['producto', 'categoria', 'precio', 'unidad', 'año', 'mes', 'notas']
-  const map = {}
-  fieldNames.forEach((name, i) => {
-    const id = fieldIds[i]
-    const synonyms = COLUMN_AUTO_MAP[name] || []
-    const matchIdx = headers.findIndex(h => {
-      const hlow = h.toLowerCase().trim()
-      return synonyms.some(s => hlow === s.toLowerCase() || hlow.includes(s.toLowerCase()))
+  const fields = Object.keys(COLUMN_AUTO_MAP)
+  const map    = {}
+  for (const field of fields) {
+    const syns = COLUMN_AUTO_MAP[field] || []
+    const idx  = headers.findIndex(h => {
+      const hl = h.toLowerCase().trim()
+      return syns.some(s => hl === s.toLowerCase() || hl.includes(s.toLowerCase()))
     })
-    map[id] = matchIdx >= 0 ? matchIdx : null
-  })
-  if (map.year === null || map.month === null) {
+    map[field] = idx >= 0 ? idx : null
+  }
+  // Date fallback: map año/mes from 'fecha' col
+  if (map.año === null || map.mes === null) {
     const dateIdx = headers.findIndex(h => {
-      const hlow = h.toLowerCase().trim()
-      return ['fecha', 'date', 'fecha fra.', 'fechafra', 'fecha_fra'].some(s => hlow === s || hlow.includes(s))
+      const hl = h.toLowerCase().trim()
+      return ['fecha','date','fecha albarán','fecha tra.'].some(s=>hl===s||hl.startsWith(s))
     })
-    if (dateIdx >= 0) {
-      if (map.year === null) map.year = dateIdx
-      if (map.month === null) map.month = dateIdx
-    }
+    if (dateIdx >= 0) { if(map.año===null) map.año=dateIdx; if(map.mes===null) map.mes=dateIdx }
   }
   return map
 }
 
 function applyMappingToUI(map, headers) {
-  const ids = ['product', 'category', 'price', 'unit', 'year', 'month', 'notes']
-  ids.forEach(id => {
-    const select = document.getElementById(`map-${id}`)
-    select.innerHTML = '<option value="">-- No importar --</option>'
-    headers.forEach((h, idx) => {
-      select.innerHTML += `<option value="${idx}">${h}</option>`
-    })
-    if (map[id] !== null) select.value = String(map[id])
+  const fields = Object.keys(COLUMN_AUTO_MAP)
+  fields.forEach(field => {
+    const el = document.getElementById(`map-${field}`)
+    if (!el) return
+    el.innerHTML = `<option value="">-- No importar --</option>` + headers.map((h,i)=>`<option value="${i}">${h}</option>`).join('')
+    if (map[field] !== null) el.value = String(map[field])
   })
 }
 
-function showPreview(data) {
-  const maxRows = Math.min(5, data.rows.length)
-  const thead = `<thead><tr>${data.headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>`
-  const tbody = `<tbody>${data.rows.slice(0, maxRows).map(r =>
-    `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`
-  ).join('')}</tbody>`
+function showPreview(d) {
+  const maxRows = Math.min(4, d.rows.length)
+  const thead   = `<thead><tr>${d.headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>`
+  const tbody   = `<tbody>${d.rows.slice(0,maxRows).map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>`
   document.getElementById('preview-table').innerHTML = thead + tbody
-  document.getElementById('preview-info').textContent = `${data.rows.length} filas · ${data.headers.length} columnas`
+  document.getElementById('preview-info').textContent = `${d.rows.length.toLocaleString('es-ES')} filas · ${d.headers.length} columnas`
   document.getElementById('preview-section').style.display = 'block'
 }
 
 async function executeImport() {
-  if (!importData || !importData.rows.length) {
-    showToast('⚠ No hay datos para importar')
-    return
-  }
-  const { headers, rows, delimiter } = importData
+  if (!importData?.rows?.length) { showToast('⚠ No hay datos para importar','error'); return }
+  const { headers, rows } = importData
 
-  let hasMapping = false
   const map = {}
-  ;['product','category','price','unit','year','month','notes'].forEach(id => {
-    const val = document.getElementById(`map-${id}`).value
-    if (val && val !== '') { map[id] = parseInt(val); hasMapping = true }
-    else map[id] = null
+  Object.keys(COLUMN_AUTO_MAP).forEach(field => {
+    const el  = document.getElementById(`map-${field}`)
+    const val = el?.value
+    map[field] = (val && val !== '') ? parseInt(val) : null
   })
+
+  const get = (row, field) => map[field] !== null ? (row[map[field]]||'') : ''
 
   const records = []
   for (const row of rows) {
-    let product = '', category = 'Sin categoría', price = NaN, unit = '€/ud', year = NaN, month = null, notes = ''
+    const product  = get(row,'producto')
+    if (!product) continue
+    const priceRaw = get(row,'precio')
+    const baseRaw  = get(row,'base_iva')
+    const price    = parseNumber(priceRaw)
+    const base_iva = parseNumber(baseRaw) || 0
+    const year     = extractYear(get(row,'año'))
+    if (isNaN(year)) continue
 
-    if (hasMapping) {
-      if (map.product !== null) product = row[map.product] || ''
-      if (map.category !== null) category = row[map.category] || 'Sin categoría'
-      price = map.price !== null ? parseNumber(row[map.price]) : NaN
-      if (map.unit !== null) unit = row[map.unit] || '€/ud'
-      year = map.year !== null ? extractYear(row[map.year]) : NaN
-      month = map.month !== null ? extractMonth(row[map.month]) : null
-      if (map.notes !== null) notes = row[map.notes] || ''
-    } else {
-      if (row.length < 5) continue
-      product = row[0]
-      category = row[1] || 'Sin categoría'
-      price = parseNumber(row[2])
-      unit = row[3] || '€/ud'
-      year = extractYear(row[4])
-      month = extractMonth(row[5])
-      notes = row.slice(6).join(delimiter).trim()
-    }
+    const catRaw  = get(row,'categoria')
+    const category= catRaw || detectCategory(product)
 
-    if (!product || isNaN(price) || isNaN(year)) continue
-    records.push({ product, category, price, unit, year, month, notes })
+    records.push({
+      product, category,
+      price:  isNaN(price) ? 0 : price,
+      unit:   get(row,'unidad') || 'kg',
+      year,
+      month:  extractMonth(get(row,'mes')),
+      notes:  get(row,'notas'),
+      cliente:            get(row,'cliente'),
+      denominacion_social:get(row,'denominacion_social'),
+      referencia:         get(row,'referencia'),
+      kilos:    parseNumber(get(row,'kilos'))  || 0,
+      unidades: parseNumber(get(row,'unidades'))|| 0,
+      litros:   parseNumber(get(row,'litros'))  || 0,
+      tarifa:   parseNumber(get(row,'tarifa'))  || 0,
+      coste_adic:parseNumber(get(row,'coste_adic'))||0,
+      base_iva,
+      documento: get(row,'documento'),
+      factura:   get(row,'factura'),
+      fecha_fra: get(row,'fecha_fra'),
+      lin:       parseInt(get(row,'lin'))||0,
+    })
   }
-  if (!records.length) { showToast('⚠ No hay registros válidos'); return }
+
+  if (!records.length) { showToast('⚠ No hay registros válidos (revisa la asignación de columnas)','error'); return }
+
+  const progressEl = document.getElementById('import-progress')
+  const progressBar= document.getElementById('import-progress-bar')
+  const progressTxt= document.getElementById('import-progress-txt')
+  progressEl.style.display = 'block'
+
   try {
-    const saved = await dbAddRecords(records)
+    const saved = await dbAddRecords(records, (done, total) => {
+      const pct = Math.round((done/total)*100)
+      progressBar.style.width = pct + '%'
+      progressTxt.textContent = `Importando… ${done.toLocaleString('es-ES')}/${total.toLocaleString('es-ES')} (${pct}%)`
+    })
     data = data.concat(saved)
     closeModal('import-modal')
     populateAllSelects()
-    showToast(`✓ ${saved.length} registros importados`)
-  } catch (e) {
+    showToast(`✓ ${saved.length.toLocaleString('es-ES')} registros importados`)
+    rerenderCurrentPage()
+  } catch(e) {
     console.error(e)
-    showToast('⚠ Error al importar')
+    showToast('⚠ Error al importar: ' + (e.message||''), 'error')
+    progressEl.style.display = 'none'
   }
 }
 
 async function importCSV() {
-  if (!importData) {
-    showToast('⚠ Selecciona un archivo primero')
-    return
-  }
+  if (!importData) { showToast('⚠ Selecciona un archivo primero','error'); return }
   const mappingEl = document.getElementById('column-mapping')
-  if (mappingEl.style.display === 'block') {
-    await executeImport()
-    return
-  }
+  if (mappingEl.style.display === 'block') { await executeImport(); return }
   const map = buildMapping(importData.headers)
   applyMappingToUI(map, importData.headers)
-  if (map.product !== null && map.price !== null) {
-    await executeImport()
-    return
-  }
+  if (map.producto !== null && (map.precio !== null || map.base_iva !== null)) { await executeImport(); return }
   mappingEl.style.display = 'block'
   showToast('⚠ Asigna las columnas y pulsa Importar de nuevo')
 }
 window.importCSV = importCSV
 
-// =================== CHART BASE OPTIONS ===================
-function baseChartOptions(colors, unit) {
-  return {
-    responsive: true, maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: { callbacks: { label: ctx => ` ${fmt(ctx.raw)} ${unit}` } }
-    },
-    scales: {
-      x: { grid: { color: colors.grid }, ticks: { color: colors.tick, font: { size: 11 } } },
-      y: { grid: { color: colors.grid }, ticks: { color: colors.tick, font: { size: 11 }, callback: v => `${v} ${unit}` } }
-    }
-  }
-}
-
-// =================== THEME TOGGLE ===================
+// =========== THEME TOGGLE ===========
 ;(function(){
   const t = document.querySelector('[data-theme-toggle]')
   const r = document.documentElement
-  let d = matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light'
+  let d   = matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light'
   r.setAttribute('data-theme', d)
-  t && t.addEventListener('click', () => {
-    d = d === 'dark' ? 'light' : 'dark'
+  if (t) t.addEventListener('click', () => {
+    d = d==='dark'?'light':'dark'
     r.setAttribute('data-theme', d)
     setTimeout(() => {
-      const activePage = document.querySelector('.page.active')?.id
-      if (activePage === 'page-dashboard') renderDashCharts()
-      if (activePage === 'page-tendencias') renderTrendCharts()
-      if (activePage === 'page-comparar') renderCompare()
+      const pg = document.querySelector('.page.active')?.id
+      if (pg==='page-dashboard')    renderDashCharts()
+      if (pg==='page-tendencias')   renderTrendCharts()
+      if (pg==='page-comparar')     renderCompare()
+      if (pg==='page-precios')      renderPrecios()
     }, 50)
   })
 })()
 
-export { initApp, renderDashboard, renderDashCharts, renderTable, renderTrends, renderTrendCharts, renderComparePage, renderCompare, renderPredictions }
+export { initApp }
