@@ -472,6 +472,12 @@ table { border-collapse: collapse; width: 100%; }
       <label class="form-label">Pega el contenido CSV aquí</label>
       <textarea class="form-input" id="csv-input" rows="6" style="resize: vertical; font-family: monospace; font-size: var(--text-xs)" placeholder="producto,categoria,precio,unidad,año,mes,notas&#10;Naranja,Cítricos,0.45,€/kg,2023,1,"></textarea>
     </div>
+    <div class="form-group" style="margin-top: var(--space-3)">
+      <label class="form-label">O selecciona un archivo</label>
+      <input type="file" id="file-input" accept=".csv,.tsv,.txt" style="display:none">
+      <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()">Seleccionar archivo</button>
+      <span id="file-name" style="font-size:var(--text-xs);color:var(--color-text-muted);margin-left:var(--space-2)"></span>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal('import-modal')">Cancelar</button>
       <button class="btn btn-primary" onclick="importCSV()">Importar</button>

@@ -880,15 +880,36 @@ function exportCSV() {
 }
 window.exportCSV = exportCSV
 
+// File input handler
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('file-input').addEventListener('change', function(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    document.getElementById('file-name').textContent = file.name
+    const reader = new FileReader()
+    reader.onload = function(ev) {
+      document.getElementById('csv-input').value = ev.target.result
+    }
+    reader.readAsText(file)
+  })
+})
+
+function detectDelimiter(line) {
+  const commaCount = (line.match(/,/g) || []).length
+  const tabCount = (line.match(/\t/g) || []).length
+  return tabCount > commaCount ? '\t' : ','
+}
+
 async function importCSV() {
   const raw = document.getElementById('csv-input').value.trim()
   if (!raw) { showToast('⚠ Pega datos CSV primero'); return }
   const lines = raw.split('\n').filter(l => l.trim())
+  const delimiter = detectDelimiter(lines[0] || '')
   const records = []
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
     if (!line || i === 0 && line.toLowerCase().startsWith('producto')) continue
-    const parts = line.split(',')
+    const parts = line.split(delimiter)
     if (parts.length < 5) continue
     const [product, category, price, unit, year, month, ...rest] = parts
     const p = parseFloat(price), y = parseInt(year)
@@ -900,7 +921,7 @@ async function importCSV() {
       unit: (unit||'€/ud').trim(),
       year: y,
       month: parseInt(month)||null,
-      notes: rest.join(',').trim()
+      notes: rest.join(delimiter).trim()
     })
   }
   if (!records.length) { showToast('⚠ No hay registros válidos'); return }
@@ -911,6 +932,8 @@ async function importCSV() {
     populateAllSelects()
     showToast(`✓ ${saved.length} registros importados`)
     document.getElementById('csv-input').value = ''
+    document.getElementById('file-name').textContent = ''
+    document.getElementById('file-input').value = ''
   } catch (e) {
     console.error(e)
     showToast('⚠ Error al importar')
