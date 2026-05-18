@@ -915,17 +915,19 @@ function parseNumber(str) {
 }
 
 function extractYear(val) {
-  const n = parseInt(val)
-  if (!isNaN(n)) return n
-  const m = String(val).match(/(\d{4})/)
+  const s = String(val).trim()
+  const n = parseInt(s)
+  if (!isNaN(n) && s.length >= 4) return n
+  const m = s.match(/(\d{4})/)
   return m ? parseInt(m[1]) : NaN
 }
 
 function extractMonth(val) {
-  const n = parseInt(val)
-  if (!isNaN(n) && n >= 1 && n <= 12) return n
-  const m = String(val).match(/^(\d{2})\/(\d{2})/)
-  return m ? parseInt(m[1]) : null
+  const s = String(val).trim()
+  const n = parseInt(s)
+  if (!isNaN(n) && n >= 1 && n <= 12 && s.length <= 2) return n
+  const m = s.match(/^(\d{2})\/(\d{2})/)
+  return m ? parseInt(m[2]) : null
 }
 
 function setupMapping(headers) {
