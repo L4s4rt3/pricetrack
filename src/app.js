@@ -123,14 +123,17 @@ function navigate(page, btn) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
   document.getElementById('page-' + page).classList.add('active')
   if (btn) btn.classList.add('active')
-  if (page === 'dashboard')    { renderDashboard(); renderHistoryView() }
-  if (page === 'ventas')       { ventasPage = 0; renderVentas() }
-  if (page === 'clientes')     { clienteSelected = null; renderClientes() }
-  if (page === 'tendencias')   renderTrends()
-  if (page === 'comparar')     renderComparePage()
-  if (page === 'predicciones') renderPredictions()
-  if (page === 'datos')        renderTable()
-  if (page === 'buscar')       initSearch()
+  // Defer heavy render so the page switch is instant visually
+  requestAnimationFrame(() => {
+    if (page === 'dashboard')    { renderDashboard(); renderHistoryView() }
+    if (page === 'ventas')       { ventasPage = 0; renderVentas() }
+    if (page === 'clientes')     { clienteSelected = null; renderClientes() }
+    if (page === 'tendencias')   renderTrendCharts()
+    if (page === 'comparar')     renderComparePage()
+    if (page === 'predicciones') renderPredictions()
+    if (page === 'datos')        renderTable()
+    if (page === 'buscar')       initSearch()
+  })
 }
 window.navigate = navigate
 
@@ -198,7 +201,6 @@ function populateAllSelects() {
 
 // =========== DASHBOARD ===========
 function renderDashboard() {
-  populateAllSelects()
   const years = getYears()
   if (!years.length) {
     document.getElementById('kpi-grid').innerHTML = '<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Sin datos</div><div class="kpi-value" style="font-size:var(--text-base)">Importa registros para comenzar</div></div>'
@@ -432,7 +434,6 @@ function getVentasFiltered() {
 }
 
 function renderVentas() {
-  populateAllSelects()
   const rows     = getVentasFiltered()
   const total    = rows.length
   const start    = ventasPage * ventasPageSize
@@ -508,7 +509,6 @@ window.setVentasPageSize = setVentasPageSize
 
 // =========== CLIENTES PAGE ===========
 function renderClientes() {
-  populateAllSelects()
   if (clienteSelected) { renderClienteDetail(clienteSelected); return }
 
   const hasRev = data.some(d => d.base_iva > 0)
@@ -673,7 +673,7 @@ function renderClienteDetail(key) {
 }
 
 // =========== TENDENCIAS ===========
-function renderTrends() { populateAllSelects(); renderTrendCharts() }
+function renderTrends() { renderTrendCharts() }
 window.renderTrends = renderTrends
 
 function renderTrendCharts() {
@@ -691,82 +691,100 @@ function renderTrendCharts() {
     return true
   })
 
-  const prices  = filtered.filter(d=>d.price>0).map(d => d.price)
-  const revenues= filtered.map(d=>d.base_iva)
-  const kgs     = filtered.map(d=>d.kilos)
-  const avgAll  = avg(prices)
-  const maxAll  = prices.length ? Math.max(...prices) : 0
-  const minAll  = prices.length ? Math.min(...prices) : 0
-  const totRev  = sum(revenues)
-  const totKg   = sum(kgs)
-  const hasRev  = totRev > 0
+  const prices   = filtered.filter(d => d.price > 0).map(d => d.price)
+  const totRev   = sum(filtered.map(d => d.base_iva))
+  const totKg    = sum(filtered.map(d => d.kilos))
+  const hasRev   = totRev > 0
+  const hasPrices= prices.length > 0
 
-  const yearAvgs = years.map(y => avg(filtered.filter(d=>d.year===y && d.price>0).map(d=>d.price)))
-  const varPct   = yearAvgs.map((v,i) => i===0 ? 0 : yearAvgs[i-1] ? ((v-yearAvgs[i-1])/yearAvgs[i-1])*100 : 0)
-  const trend    = yearAvgs.length >= 2 ? yearAvgs[yearAvgs.length-1] - yearAvgs[0] : 0
+  // Use revenue per year when no price data; otherwise use avg price
+  const yearVals = years.map(y => {
+    const yd = filtered.filter(d => d.year === y)
+    if (hasPrices) return avg(yd.filter(d => d.price > 0).map(d => d.price))
+    return sum(yd.map(d => d.base_iva))
+  })
+  const varPct = yearVals.map((v, i) => i === 0 ? 0 : yearVals[i-1] ? ((v - yearVals[i-1]) / yearVals[i-1]) * 100 : 0)
+  const trend  = yearVals.length >= 2 ? yearVals[yearVals.length-1] - yearVals[0] : 0
+
+  // KPIs
+  const kpiLabel = hasPrices ? 'Precio medio período' : 'Facturación total'
+  const kpiValue = hasPrices ? fmtEur(avg(prices)) : fmtEur(totRev)
+  const maxVal   = hasPrices ? (prices.length ? Math.max(...prices) : 0) : Math.max(...yearVals)
+  const minVal   = hasPrices ? (prices.length ? Math.min(...prices) : 0) : Math.min(...yearVals)
 
   document.getElementById('trend-kpis').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Precio medio período</div><div class="kpi-value">${fmtEur(avgAll)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Precio máximo</div><div class="kpi-value">${fmtEur(maxAll)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Precio mínimo</div><div class="kpi-value">${minAll>0?fmtEur(minAll):'—'}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Tendencia general</div><div class="kpi-value">${trend>=0?'+':''}${fmt(trend)} €</div><div class="kpi-delta ${trend>=0?'delta-up':'delta-down'}">${trend>=0?'▲ Alza':'▼ Baja'}</div></div>
-    ${hasRev?`<div class="kpi-card kpi-gold"><div class="kpi-label">Facturación total</div><div class="kpi-value">${fmtEur(totRev)}</div></div>`:''}
+    <div class="kpi-card"><div class="kpi-label">${kpiLabel}</div><div class="kpi-value">${kpiValue}</div></div>
+    <div class="kpi-card"><div class="kpi-label">${hasPrices ? 'Precio máximo' : 'Mejor año'}</div><div class="kpi-value">${fmtEur(maxVal)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">${hasPrices ? 'Precio mínimo' : 'Año más bajo'}</div><div class="kpi-value">${fmtEur(minVal)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Tendencia general</div><div class="kpi-value">${trend>=0?'+':''}${fmtEur(trend)}</div><div class="kpi-delta ${trend>=0?'delta-up':'delta-down'}">${trend>=0?'▲ Alza':'▼ Baja'}</div></div>
     ${totKg>0?`<div class="kpi-card kpi-blue"><div class="kpi-label">KG totales</div><div class="kpi-value">${fmtKg(totKg)}</div></div>`:''}
   `
 
   const colors = getChartColors()
+  const mainUnit = hasPrices ? '€/kg' : '€'
+  const mainLabel= hasPrices ? 'Precio medio' : 'Facturación'
 
+  // Main trend chart: monthly price avg OR monthly revenue
   destroyChart('trendMainChart')
   const allPts = []
   for (const y of years) {
-    for (let m=1; m<=12; m++) {
-      const pts = filtered.filter(d=>d.year===y && d.month===m && d.price>0).map(d=>d.price)
-      if (pts.length) allPts.push({ label:`${MONTHS[m-1]} ${y}`, value: avg(pts) })
+    for (let m = 1; m <= 12; m++) {
+      const yd = filtered.filter(d => d.year === y && d.month === m)
+      if (hasPrices) {
+        const pts = yd.filter(d => d.price > 0).map(d => d.price)
+        if (pts.length) allPts.push({ label: `${MONTHS[m-1]} ${y}`, value: avg(pts) })
+      } else {
+        const rev = sum(yd.map(d => d.base_iva))
+        if (rev > 0) allPts.push({ label: `${MONTHS[m-1]} ${y}`, value: rev })
+      }
     }
   }
   const c1 = document.getElementById('trendMainChart')?.getContext('2d')
   if (c1) charts['trendMainChart'] = new Chart(c1, {
     type: 'line',
-    data: { labels: allPts.map(p=>p.label), datasets:[{ label:'Precio medio', data:allPts.map(p=>p.value), borderColor:'#01696f', backgroundColor:'rgba(1,105,111,0.07)', borderWidth:2, tension:0.35, fill:true, pointRadius:2 }] },
-    options: baseChartOptions(colors,'€/kg')
+    data: { labels: allPts.map(p => p.label), datasets: [{ label: mainLabel, data: allPts.map(p => p.value), borderColor: '#01696f', backgroundColor: 'rgba(1,105,111,0.07)', borderWidth: 2, tension: 0.35, fill: true, pointRadius: 2 }] },
+    options: baseChartOptions(colors, mainUnit)
   })
 
+  // Max/min by year (price) or top/bottom revenue years
   destroyChart('trendMinMaxChart')
   const c2 = document.getElementById('trendMinMaxChart')?.getContext('2d')
-  if (c2) charts['trendMinMaxChart'] = new Chart(c2, {
-    type: 'bar',
-    data: {
-      labels: years,
-      datasets: [
-        { label:'Máximo', data: years.map(y=>{ const p=filtered.filter(d=>d.year===y&&d.price>0).map(d=>d.price); return p.length?Math.max(...p):0 }), backgroundColor:'rgba(218,113,1,0.7)', borderRadius:4 },
-        { label:'Mínimo', data: years.map(y=>{ const p=filtered.filter(d=>d.year===y&&d.price>0).map(d=>d.price); return p.length?Math.min(...p):0 }), backgroundColor:'rgba(1,105,111,0.5)', borderRadius:4 },
-      ]
-    },
-    options: { ...baseChartOptions(colors,'€'), plugins:{ legend:{ display:true, labels:{ color:colors.tick } } } }
-  })
-
-  destroyChart('trendVarChart')
-  const c3 = document.getElementById('trendVarChart')?.getContext('2d')
-  if (c3) charts['trendVarChart'] = new Chart(c3, {
-    type: 'bar',
-    data: { labels: years.slice(1), datasets:[{ label:'Variación %', data:varPct.slice(1), backgroundColor:varPct.slice(1).map(v=>v>=0?'rgba(67,122,34,0.7)':'rgba(161,44,123,0.7)'), borderRadius:4 }] },
-    options: baseChartOptions(colors,'%')
-  })
-
-  if (hasRev || totKg>0) {
-    destroyChart('trendVolChart')
-    const c4 = document.getElementById('trendVolChart')?.getContext('2d')
-    if (c4) charts['trendVolChart'] = new Chart(c4, {
+  if (c2) {
+    const ds = hasPrices
+      ? [
+          { label: 'Máximo', data: years.map(y => { const p = filtered.filter(d => d.year===y && d.price>0).map(d=>d.price); return p.length ? Math.max(...p) : 0 }), backgroundColor: 'rgba(218,113,1,0.7)', borderRadius: 4 },
+          { label: 'Mínimo', data: years.map(y => { const p = filtered.filter(d => d.year===y && d.price>0).map(d=>d.price); return p.length ? Math.min(...p) : 0 }), backgroundColor: 'rgba(1,105,111,0.5)', borderRadius: 4 },
+        ]
+      : [{ label: 'Facturación anual', data: yearVals, backgroundColor: 'rgba(1,105,111,0.6)', borderRadius: 4 }]
+    charts['trendMinMaxChart'] = new Chart(c2, {
       type: 'bar',
-      data: { labels: years, datasets:[{ label: hasRev?'Facturación (€)':'KG vendidos', data: years.map(y=>{ const yd=filtered.filter(d=>d.year===y); return hasRev?sum(yd.map(d=>d.base_iva)):sum(yd.map(d=>d.kilos)) }), backgroundColor:'rgba(0,100,148,0.6)', borderRadius:4 }] },
-      options: baseChartOptions(colors, hasRev?'€':'kg')
+      data: { labels: years, datasets: ds },
+      options: { ...baseChartOptions(colors, '€'), plugins: { legend: { display: hasPrices, labels: { color: colors.tick } } } }
     })
   }
+
+  // Variation % year over year
+  destroyChart('trendVarChart')
+  const c3 = document.getElementById('trendVarChart')?.getContext('2d')
+  if (c3 && years.length > 1) charts['trendVarChart'] = new Chart(c3, {
+    type: 'bar',
+    data: { labels: years.slice(1), datasets: [{ label: 'Variación %', data: varPct.slice(1), backgroundColor: varPct.slice(1).map(v => v >= 0 ? 'rgba(67,122,34,0.7)' : 'rgba(161,44,123,0.7)'), borderRadius: 4 }] },
+    options: baseChartOptions(colors, '%')
+  })
+
+  // Volume chart
+  destroyChart('trendVolChart')
+  const c4 = document.getElementById('trendVolChart')?.getContext('2d')
+  if (c4 && (hasRev || totKg > 0)) charts['trendVolChart'] = new Chart(c4, {
+    type: 'bar',
+    data: { labels: years, datasets: [{ label: hasRev ? 'Facturación (€)' : 'KG vendidos', data: years.map(y => { const yd = filtered.filter(d => d.year===y); return hasRev ? sum(yd.map(d=>d.base_iva)) : sum(yd.map(d=>d.kilos)) }), backgroundColor: 'rgba(0,100,148,0.6)', borderRadius: 4 }] },
+    options: baseChartOptions(colors, hasRev ? '€' : 'kg')
+  })
 }
 window.renderTrendCharts = renderTrendCharts
 
 // =========== COMPARAR ===========
-function renderComparePage() { populateAllSelects(); selectedYears = []; renderYearCards() }
+function renderComparePage() { selectedYears = []; renderYearCards() }
 window.renderComparePage = renderComparePage
 
 function renderYearCards() {
@@ -869,7 +887,6 @@ function computePrediction(product) {
 }
 
 function renderPredictions() {
-  populateAllSelects()
   const selProduct = document.getElementById('pred-product')?.value
   const result     = computePrediction(selProduct||null)
   const colors     = getChartColors()
@@ -937,7 +954,6 @@ window.renderPredictions = renderPredictions
 
 // =========== DATOS / TABLA ===========
 function renderTable() {
-  populateAllSelects()
   const search = document.getElementById('table-search')?.value.toLowerCase() || ''
   const yearF  = parseInt(document.getElementById('table-year-filter')?.value) || null
   const catF   = document.getElementById('table-cat-filter')?.value || ''
