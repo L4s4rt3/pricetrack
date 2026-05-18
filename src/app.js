@@ -833,7 +833,10 @@ window.doSearch = doSearch
 
 // =================== ADD RECORD ===================
 function openAddModal() { document.getElementById('add-modal').classList.add('open') }
-function closeModal(id) { document.getElementById(id).classList.remove('open') }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open')
+  if (id === 'import-modal') document.getElementById('column-mapping').style.display = 'none'
+}
 function openImportModal() { document.getElementById('import-modal').classList.add('open') }
 window.openAddModal = openAddModal
 window.closeModal = closeModal
@@ -880,6 +883,66 @@ function exportCSV() {
 }
 window.exportCSV = exportCSV
 
+const COLUMN_AUTO_MAP = {
+  producto: ['articulo', 'producto', 'product', 'artículo', 'referencia'],
+  categoria: ['categoria', 'categoría', 'category', 'departamento', 'sección', 'seccion', 'familia'],
+  precio: ['pvp', 'precio', 'price', 'coste', 'importe', 'baseiva', 'base iva'],
+  unidad: ['unidad', 'unit', 'unid', 'kilos', 'litros', 'medida', 'um', 'kg'],
+  año: ['año', 'ano', 'year', 'ejercicio'],
+  mes: ['mes', 'month'],
+  notas: ['notas', 'notes', 'observaciones', 'comentario', 'comentarios']
+}
+
+function detectDelimiter(line) {
+  const commaCount = (line.match(/,/g) || []).length
+  const tabCount = (line.match(/\t/g) || []).length
+  return tabCount > commaCount ? '\t' : ','
+}
+
+function parseNumber(str) {
+  const s = String(str).trim()
+  if (!s) return NaN
+  let normalized = s
+  if (s.includes(',') && !s.includes('.')) {
+    normalized = s.replace(',', '.')
+  } else if (s.includes(',') && s.includes('.')) {
+    normalized = s.replace(/\./g, '').replace(',', '.')
+  }
+  return parseFloat(normalized)
+}
+
+function extractYear(val) {
+  const n = parseInt(val)
+  if (!isNaN(n)) return n
+  const m = String(val).match(/(\d{4})/)
+  return m ? parseInt(m[1]) : NaN
+}
+
+function extractMonth(val) {
+  const n = parseInt(val)
+  if (!isNaN(n) && n >= 1 && n <= 12) return n
+  const m = String(val).match(/^(\d{2})\/(\d{2})/)
+  return m ? parseInt(m[1]) : null
+}
+
+function setupMapping(headers) {
+  const fieldIds = ['product', 'category', 'price', 'unit', 'year', 'month', 'notes']
+  const fieldNames = ['producto', 'categoria', 'precio', 'unidad', 'año', 'mes', 'notas']
+  fieldNames.forEach((name, i) => {
+    const select = document.getElementById(`map-${fieldIds[i]}`)
+    select.innerHTML = '<option value="">-- No importar --</option>'
+    headers.forEach((h, idx) => {
+      select.innerHTML += `<option value="${idx}">${h}</option>`
+    })
+    const synonyms = COLUMN_AUTO_MAP[name] || []
+    const matchIdx = headers.findIndex(h => {
+      const hlow = h.toLowerCase().trim()
+      return synonyms.some(s => hlow === s.toLowerCase() || hlow.includes(s.toLowerCase()))
+    })
+    if (matchIdx >= 0) select.value = String(matchIdx)
+  })
+}
+
 // File input handler
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('file-input').addEventListener('change', function(e) {
@@ -888,41 +951,71 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('file-name').textContent = file.name
     const reader = new FileReader()
     reader.onload = function(ev) {
-      document.getElementById('csv-input').value = ev.target.result
+      const content = ev.target.result
+      document.getElementById('csv-input').value = content
+      const lines = content.trim().split('\n').filter(l => l.trim())
+      if (lines.length > 0 && !lines[0].toLowerCase().startsWith('producto')) {
+        setupMapping(lines[0].split(detectDelimiter(lines[0])).map(h => h.trim()))
+        document.getElementById('column-mapping').style.display = 'block'
+      }
     }
     reader.readAsText(file)
   })
 })
-
-function detectDelimiter(line) {
-  const commaCount = (line.match(/,/g) || []).length
-  const tabCount = (line.match(/\t/g) || []).length
-  return tabCount > commaCount ? '\t' : ','
-}
 
 async function importCSV() {
   const raw = document.getElementById('csv-input').value.trim()
   if (!raw) { showToast('⚠ Pega datos CSV primero'); return }
   const lines = raw.split('\n').filter(l => l.trim())
   const delimiter = detectDelimiter(lines[0] || '')
+  const isStandard = lines[0].toLowerCase().startsWith('producto')
+  const mappingEl = document.getElementById('column-mapping')
+  const mappingVisible = mappingEl.style.display === 'block'
+
+  if (!isStandard && !mappingVisible) {
+    const headers = lines[0].split(delimiter).map(h => h.trim())
+    setupMapping(headers)
+    mappingEl.style.display = 'block'
+    showToast('⚠ Asigna las columnas y pulsa Importar de nuevo')
+    return
+  }
+
+  const map = {}
+  if (mappingVisible) {
+    ;['product','category','price','unit','year','month','notes'].forEach(id => {
+      const val = document.getElementById(`map-${id}`).value
+      map[id] = val !== '' ? parseInt(val) : null
+    })
+  }
+
   const records = []
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
-    if (!line || i === 0 && line.toLowerCase().startsWith('producto')) continue
+    if (!line || (i === 0 && isStandard)) continue
     const parts = line.split(delimiter)
-    if (parts.length < 5) continue
-    const [product, category, price, unit, year, month, ...rest] = parts
-    const p = parseFloat(price), y = parseInt(year)
-    if (!product || isNaN(p) || isNaN(y)) continue
-    records.push({
-      product: product.trim(),
-      category: (category||'').trim() || 'Sin categoría',
-      price: p,
-      unit: (unit||'€/ud').trim(),
-      year: y,
-      month: parseInt(month)||null,
-      notes: rest.join(delimiter).trim()
-    })
+    let product = '', category = 'Sin categoría', price = NaN, unit = '€/ud', year = NaN, month = null, notes = ''
+
+    if (mappingVisible) {
+      if (map.product !== null) product = (parts[map.product]||'').trim()
+      if (map.category !== null) category = (parts[map.category]||'').trim() || 'Sin categoría'
+      price = map.price !== null ? parseNumber(parts[map.price]) : NaN
+      if (map.unit !== null) unit = (parts[map.unit]||'').trim() || '€/ud'
+      year = map.year !== null ? extractYear(parts[map.year]) : NaN
+      month = map.month !== null ? extractMonth(parts[map.month]) : null
+      if (map.notes !== null) notes = (parts[map.notes]||'').trim()
+    } else {
+      if (parts.length < 5) continue
+      product = parts[0].trim()
+      category = (parts[1]||'').trim() || 'Sin categoría'
+      price = parseNumber(parts[2])
+      unit = (parts[3]||'€/ud').trim()
+      year = extractYear(parts[4])
+      month = extractMonth(parts[5])
+      notes = parts.slice(6).join(delimiter).trim()
+    }
+
+    if (!product || isNaN(price) || isNaN(year)) continue
+    records.push({ product, category, price, unit, year, month, notes })
   }
   if (!records.length) { showToast('⚠ No hay registros válidos'); return }
   try {
