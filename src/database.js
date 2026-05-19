@@ -100,6 +100,18 @@ export async function deleteRecord(id) {
 }
 
 export async function deleteAllRecords(onProgress) {
+  const { data: deletedCount, error: rpcError } = await supabase.rpc('delete_all_precios')
+  if (!rpcError) {
+    if (onProgress) onProgress(Number(deletedCount) || 0)
+    return
+  }
+
+  const canFallback =
+    rpcError.code === 'PGRST202' ||
+    /schema cache|function .*delete_all_precios|could not find the function/i.test(rpcError.message || '')
+
+  if (!canFallback) throw rpcError
+
   const CHUNK = 500
   let deleted = 0
 
