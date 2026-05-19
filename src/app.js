@@ -1121,19 +1121,9 @@ async function deleteAllRecords() {
   if (!confirm('¿Borrar TODOS los registros? Esta acción no se puede deshacer.')) return
   if (!confirm(`Confirmación: vas a eliminar ${data.length.toLocaleString('es-ES')} registros. ¿Seguro?`)) return
   try {
-    const progreso = document.getElementById('import-progress')
-    const barra = document.getElementById('import-progress-bar')
-    const texto = document.getElementById('import-progress-txt')
-    progreso.style.display = 'block'
-    barra.style.width = '0%'
-    texto.textContent = 'Borrando registros…'
-    const total = await dbDeleteAllRecords((done) => {
-      const pct = Math.round((done / data.length) * 100)
-      barra.style.width = pct + '%'
-      texto.textContent = `Borrando… ${done.toLocaleString('es-ES')} / ${data.length.toLocaleString('es-ES')}`
-    })
+    const total = data.length
+    await dbDeleteAllRecords()
     data = []
-    progreso.style.display = 'none'
     populateAllSelects()
     rerenderCurrentPage()
     showToast(`✓ ${total.toLocaleString('es-ES')} registros eliminados`)

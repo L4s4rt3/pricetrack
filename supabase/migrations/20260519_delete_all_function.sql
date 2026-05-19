@@ -1,0 +1,10 @@
+CREATE OR REPLACE FUNCTION delete_all_precios()
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  DELETE FROM precios;
+  RETURN 1;
+END;
+$$;
