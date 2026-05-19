@@ -91,6 +91,9 @@ async function initApp() {
   renderDashboard()
   renderHistoryView()
 
+  const delBtn = document.querySelector('.btn-delete-all')
+  if (delBtn) delBtn.onclick = deleteAllRecords
+
   subscribeToChanges((payload) => {
     const { event_type, new: nr, old: or } = payload
     if (event_type === 'INSERT' && nr)  { data.push(normalizeRow(nr)); showToast(`✓ Nuevo: ${nr.producto}`) }
@@ -1125,7 +1128,6 @@ async function deleteAllRecords() {
     showToast('✓ Todos los registros eliminados')
   } catch(e) { console.error(e); showToast('⚠ Error al borrar','error') }
 }
-window.deleteAllRecords = deleteAllRecords
 
 // =========== EXPORT ===========
 function exportCSV() {
