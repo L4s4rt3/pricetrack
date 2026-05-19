@@ -100,7 +100,7 @@ export async function deleteRecord(id) {
 }
 
 export async function deleteAllRecords() {
-  const { error } = await supabase.rpc('delete_all_precios')
+  const { error } = await supabase.from(TABLE).delete().not('id', 'is', null)
   if (error) throw error
 }
 
