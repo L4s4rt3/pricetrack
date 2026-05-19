@@ -99,8 +99,9 @@ export async function deleteRecord(id) {
   if (error) throw error
 }
 
-export async function deleteAllRecords() {
+export async function deleteAllRecords(onProgress) {
   const CHUNK = 500
+  let deleted = 0
 
   while (true) {
     const { data, error: fetchError } = await supabase
@@ -118,6 +119,8 @@ export async function deleteAllRecords() {
       .in('id', data.map(row => row.id))
 
     if (deleteError) throw deleteError
+    deleted += data.length
+    if (onProgress) onProgress(deleted)
     if (data.length < CHUNK) break
   }
 }

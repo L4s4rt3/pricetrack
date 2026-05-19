@@ -10,6 +10,8 @@ let selectedYears = []
 let ventasPage = 0
 let ventasPageSize = 50
 let clienteSelected = null
+let toastTimer = null
+let bulkDeleting = false
 
 const MONTHS      = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -58,11 +60,12 @@ function getChartColors() {
 
 function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id] } }
 
-function showToast(msg, type = '') {
+function showToast(msg, type = '', duration = 3000) {
   const t = document.getElementById('toast')
+  if (toastTimer) clearTimeout(toastTimer)
   t.textContent = msg
   t.className = 'toast show' + (type ? ' toast-' + type : '')
-  setTimeout(() => t.className = 'toast', 3000)
+  if (duration > 0) toastTimer = setTimeout(() => t.className = 'toast', duration)
 }
 
 function baseChartOptions(colors, unit = '€') {
@@ -95,6 +98,7 @@ async function initApp() {
   if (delBtn) delBtn.onclick = deleteAllRecords
 
   subscribeToChanges((payload) => {
+    if (bulkDeleting) return
     const eventType = payload.eventType || payload.event_type
     const { new: nr, old: or } = payload
     if (eventType === 'INSERT' && nr)  { data.push(normalizeRow(nr)); showToast(`✓ Nuevo: ${nr.producto}`) }
@@ -1121,14 +1125,32 @@ async function deleteAllRecords() {
   if (!data.length) { showToast('No hay datos que borrar'); return }
   if (!confirm('¿Borrar TODOS los registros? Esta acción no se puede deshacer.')) return
   if (!confirm(`Confirmación: vas a eliminar ${data.length.toLocaleString('es-ES')} registros. ¿Seguro?`)) return
+  const btn = document.querySelector('.btn-delete-all')
+  const originalBtnHtml = btn?.innerHTML
   try {
     const total = data.length
-    await dbDeleteAllRecords()
+    bulkDeleting = true
+    if (btn) {
+      btn.disabled = true
+      btn.textContent = 'Borrando...'
+    }
+    showToast(`Borrando registros... 0/${total.toLocaleString('es-ES')}`, '', 0)
+    await dbDeleteAllRecords((deleted) => {
+      const done = Math.min(deleted, total)
+      showToast(`Borrando registros... ${done.toLocaleString('es-ES')}/${total.toLocaleString('es-ES')}`, '', 0)
+    })
     data = []
     populateAllSelects()
     rerenderCurrentPage()
     showToast(`✓ ${total.toLocaleString('es-ES')} registros eliminados`)
   } catch(e) { console.error(e); showToast('⚠ Error al borrar: ' + (e.message||''),'error') }
+  finally {
+    bulkDeleting = false
+    if (btn) {
+      btn.disabled = false
+      if (originalBtnHtml) btn.innerHTML = originalBtnHtml
+    }
+  }
 }
 
 // =========== EXPORT ===========
