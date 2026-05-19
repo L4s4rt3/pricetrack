@@ -95,10 +95,11 @@ async function initApp() {
   if (delBtn) delBtn.onclick = deleteAllRecords
 
   subscribeToChanges((payload) => {
-    const { event_type, new: nr, old: or } = payload
-    if (event_type === 'INSERT' && nr)  { data.push(normalizeRow(nr)); showToast(`✓ Nuevo: ${nr.producto}`) }
-    else if (event_type === 'DELETE' && or) data = data.filter(d => d.id !== or.id)
-    else if (event_type === 'UPDATE' && nr) {
+    const eventType = payload.eventType || payload.event_type
+    const { new: nr, old: or } = payload
+    if (eventType === 'INSERT' && nr)  { data.push(normalizeRow(nr)); showToast(`✓ Nuevo: ${nr.producto}`) }
+    else if (eventType === 'DELETE' && or) data = data.filter(d => d.id !== or.id)
+    else if (eventType === 'UPDATE' && nr) {
       const i = data.findIndex(d => d.id === nr.id)
       if (i !== -1) data[i] = normalizeRow(nr)
     }
@@ -1128,7 +1129,6 @@ async function deleteAllRecords() {
     rerenderCurrentPage()
     showToast(`✓ ${total.toLocaleString('es-ES')} registros eliminados`)
   } catch(e) { console.error(e); showToast('⚠ Error al borrar: ' + (e.message||''),'error') }
-}
 }
 
 // =========== EXPORT ===========
