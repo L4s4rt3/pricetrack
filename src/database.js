@@ -100,8 +100,26 @@ export async function deleteRecord(id) {
 }
 
 export async function deleteAllRecords() {
-  const { error } = await supabase.from(TABLE).delete().not('id', 'is', null)
-  if (error) throw error
+  const CHUNK = 500
+
+  while (true) {
+    const { data, error: fetchError } = await supabase
+      .from(TABLE)
+      .select('id')
+      .order('id', { ascending: true })
+      .limit(CHUNK)
+
+    if (fetchError) throw fetchError
+    if (!data?.length) break
+
+    const { error: deleteError } = await supabase
+      .from(TABLE)
+      .delete()
+      .in('id', data.map(row => row.id))
+
+    if (deleteError) throw deleteError
+    if (data.length < CHUNK) break
+  }
 }
 
 export function subscribeToChanges(onChange) {
