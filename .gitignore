@@ -2,6 +2,3 @@ node_modules/
 dist/
 .env
 *.local
-.claude/
-ventas
-ventas.csv
