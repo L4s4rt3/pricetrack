@@ -99,6 +99,11 @@ export async function deleteRecord(id) {
   if (error) throw error
 }
 
+export async function deleteAllRecords() {
+  const { error } = await supabase.from(TABLE).delete().neq('id', 0)
+  if (error) throw error
+}
+
 export function subscribeToChanges(onChange) {
   return supabase
     .channel('precios-changes')

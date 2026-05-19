@@ -1,6 +1,6 @@
 import {
   fetchAllRecords, addRecord as dbAddRecord, addRecords as dbAddRecords,
-  deleteRecord as dbDeleteRecord, subscribeToChanges, normalizeRow
+  deleteRecord as dbDeleteRecord, deleteAllRecords as dbDeleteAllRecords, subscribeToChanges, normalizeRow
 } from './database.js'
 
 // =========== GLOBALS ===========
@@ -1113,6 +1113,20 @@ async function deleteRecord(id) {
 }
 window.deleteRecord = deleteRecord
 
+async function deleteAllRecords() {
+  if (!data.length) { showToast('No hay datos que borrar'); return }
+  if (!confirm('¿Borrar TODOS los registros? Esta acción no se puede deshacer.')) return
+  if (!confirm(`Confirmación: vas a eliminar ${data.length.toLocaleString('es-ES')} registros. ¿Seguro?`)) return
+  try {
+    await dbDeleteAllRecords()
+    data = []
+    populateAllSelects()
+    rerenderCurrentPage()
+    showToast('✓ Todos los registros eliminados')
+  } catch(e) { console.error(e); showToast('⚠ Error al borrar','error') }
+}
+window.deleteAllRecords = deleteAllRecords
+
 // =========== EXPORT ===========
 function exportCSV() {
   const headers = 'fecha,documento,cliente,denominacion_social,referencia,producto,categoria,kilos,pvp,base_iva,ano,mes,notas'
@@ -1206,6 +1220,15 @@ async function handleFileSelect(e) {
       if (raw.length < 2) { showToast('⚠ El archivo no tiene datos','error'); return }
       headers = raw[0].map(h => String(h).trim())
       rows    = raw.slice(1).filter(r=>r.some(c=>String(c).trim())).map(r=>{ while(r.length<headers.length)r.push(''); return r.map(c=>String(c).trim()) })
+    } else if (ext === 'csv' && typeof Papa !== 'undefined') {
+      const text = await file.text()
+      const result = Papa.parse(text, { header: false, skipEmptyLines: true })
+      if (!result.data || result.data.length < 2) { showToast('⚠ El archivo no tiene datos','error'); return }
+      headers = result.data[0].map(h => String(h).trim().replace(/^"|"$/g,''))
+      rows = result.data.slice(1).filter(r => r.some(c => String(c).trim())).map(r => {
+        while (r.length < headers.length) r.push('')
+        return r.map(c => String(c).trim().replace(/^"|"$/g,''))
+      })
     } else {
       const buf  = await file.arrayBuffer()
       const text = await decodeText(buf)
