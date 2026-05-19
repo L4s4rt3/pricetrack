@@ -99,9 +99,26 @@ export async function deleteRecord(id) {
   if (error) throw error
 }
 
-export async function deleteAllRecords() {
-  const { error } = await supabase.from(TABLE).delete().not('id', 'is', null)
-  if (error) throw error
+export async function deleteAllRecords(onProgress) {
+  const CHUNK = 500
+  let total = 0
+  while (true) {
+    const { data: ids, error: selErr } = await supabase
+      .from(TABLE)
+      .select('id')
+      .limit(CHUNK)
+    if (selErr) throw selErr
+    if (!ids?.length) break
+    const { error: delErr } = await supabase
+      .from(TABLE)
+      .delete()
+      .in('id', ids.map(r => r.id))
+    if (delErr) throw delErr
+    total += ids.length
+    if (onProgress) onProgress(total)
+    if (ids.length < CHUNK) break
+  }
+  return total
 }
 
 export function subscribeToChanges(onChange) {
