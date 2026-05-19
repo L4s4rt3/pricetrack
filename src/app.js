@@ -1126,7 +1126,8 @@ async function deleteAllRecords() {
     populateAllSelects()
     rerenderCurrentPage()
     showToast('✓ Todos los registros eliminados')
-  } catch(e) { console.error(e); showToast('⚠ Error al borrar','error') }
+  } catch(e) { console.error(e);     showToast('⚠ Error al borrar: ' + (e.message||''),'error')
+  }
 }
 
 // =========== EXPORT ===========
