@@ -321,8 +321,11 @@ table { border-collapse: collapse; width: 100%; }
         <select class="form-select" id="ventas-year" onchange="ventasPage=0;renderVentas()" style="min-width:130px"></select>
         <select class="form-select" id="ventas-month" onchange="ventasPage=0;renderVentas()" style="min-width:130px"></select>
         <select class="form-select" id="ventas-cliente" onchange="ventasPage=0;renderVentas()" style="min-width:180px"></select>
-        <select class="form-select" id="ventas-type" onchange="ventasPage=0;renderVentas()" style="min-width:150px"></select>
-        <select class="form-select" id="ventas-base" onchange="ventasPage=0;renderVentas()" style="min-width:150px"></select>
+        <select class="form-select" id="ventas-type" onchange="populateAllSelects();ventasPage=0;renderVentas()" style="min-width:150px"></select>
+        <select class="form-select" id="ventas-base" onchange="populateAllSelects();ventasPage=0;renderVentas()" style="min-width:150px"></select>
+        <select class="form-select" id="ventas-variety" onchange="populateAllSelects();ventasPage=0;renderVentas()" style="min-width:160px"></select>
+        <select class="form-select" id="ventas-caliber" onchange="ventasPage=0;renderVentas()" style="min-width:130px"></select>
+        <select class="form-select" id="ventas-format" onchange="ventasPage=0;renderVentas()" style="min-width:150px"></select>
         <select class="form-select" id="ventas-subproduct" onchange="ventasPage=0;renderVentas()" style="min-width:170px"></select>
         <button class="btn btn-secondary" onclick="exportCSV()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -352,10 +355,13 @@ table { border-collapse: collapse; width: 100%; }
     <!-- ===== PRODUCTOS ===== -->
     <div class="page" id="page-productos">
       <h2 class="page-title">Productos y Facturas</h2>
-      <p class="page-subtitle">Navega por producto base, subproducto y tipo de factura</p>
+      <p class="page-subtitle">Navega por tipo de factura, variedad, calibre, formato y subproducto</p>
       <div class="filters-bar">
-        <select class="form-select" id="product-type" onchange="renderProductos()" style="min-width:150px"></select>
-        <select class="form-select" id="product-base" onchange="renderProductos()" style="min-width:150px"></select>
+        <select class="form-select" id="product-type" onchange="populateAllSelects();renderProductos()" style="min-width:150px"></select>
+        <select class="form-select" id="product-base" onchange="populateAllSelects();renderProductos()" style="min-width:150px"></select>
+        <select class="form-select" id="product-variety" onchange="populateAllSelects();renderProductos()" style="min-width:160px"></select>
+        <select class="form-select" id="product-caliber" onchange="renderProductos()" style="min-width:130px"></select>
+        <select class="form-select" id="product-format" onchange="renderProductos()" style="min-width:150px"></select>
         <select class="form-select" id="product-subproduct" onchange="renderProductos()" style="min-width:180px"></select>
       </div>
       <div class="summary-bar" id="product-summary"></div>
@@ -473,8 +479,11 @@ table { border-collapse: collapse; width: 100%; }
         <select class="form-select" id="table-cat-filter" onchange="renderTable()" style="min-width:150px">
           <option value="">Todas las categorías</option>
         </select>
-        <select class="form-select" id="table-type" onchange="renderTable()" style="min-width:150px"></select>
-        <select class="form-select" id="table-base" onchange="renderTable()" style="min-width:150px"></select>
+        <select class="form-select" id="table-type" onchange="populateAllSelects();renderTable()" style="min-width:150px"></select>
+        <select class="form-select" id="table-base" onchange="populateAllSelects();renderTable()" style="min-width:150px"></select>
+        <select class="form-select" id="table-variety" onchange="populateAllSelects();renderTable()" style="min-width:160px"></select>
+        <select class="form-select" id="table-caliber" onchange="renderTable()" style="min-width:130px"></select>
+        <select class="form-select" id="table-format" onchange="renderTable()" style="min-width:150px"></select>
         <select class="form-select" id="table-subproduct" onchange="renderTable()" style="min-width:170px"></select>
         <button class="btn btn-secondary" onclick="exportCSV()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>

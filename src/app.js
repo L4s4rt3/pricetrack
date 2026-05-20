@@ -12,6 +12,7 @@ let ventasPageSize = 50
 let clienteSelected = null
 let toastTimer = null
 let bulkDeleting = false
+const classificationCache = new Map()
 
 const MONTHS      = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -68,74 +69,178 @@ function normalizeText(value) {
     .replace(/[\u0300-\u036f]/g, '')
 }
 
+function firstMatch(text, rules, fallback = '') {
+  const hit = rules.find(rule => rule.re.test(text))
+  return hit ? hit.label : fallback
+}
+
+function extractCaliber(text) {
+  const match = text.match(/\bCAL\.?\s*([0-9]+(?:\s*[\/\-]\s*[0-9]+)?)/)
+  if (!match) return 'Sin calibre'
+  return 'Cal ' + match[1].replace(/\s+/g, '')
+}
+
+function extractWeight(text) {
+  const pack = text.match(/\b([0-9]+)\s*X\s*([0-9]+(?:[,.][0-9]+)?)\s*KG\b/)
+  if (pack) return pack[1] + ' x ' + pack[2].replace(',', '.') + ' kg'
+  const weight = text.match(/\b([0-9]+(?:[,.][0-9]+)?)\s*KG\b/)
+  return weight ? weight[1].replace(',', '.') + ' kg' : ''
+}
+
+function extractFormat(text) {
+  const presentation = firstMatch(text, [
+    { re: /D\s*-?\s*PACK/, label: 'D-Pack' },
+    { re: /GIRSAC/, label: 'Girsac' },
+    { re: /GRAN(?:E|D)EL/, label: 'Granel' },
+    { re: /EMPAQUET|\bEMP\b/, label: 'Empaquetado' },
+    { re: /MALLA/, label: 'Malla' },
+    { re: /CLIP\s*TO\s*CLIP|\bC2C\b/, label: 'Clip to clip' },
+    { re: /BOX/, label: 'Box' }
+  ], '')
+  const weight = extractWeight(text)
+  return [presentation || 'Sin formato', weight].filter(Boolean).join(' · ')
+}
+
+function extractContainer(text) {
+  return firstMatch(text, [
+    { re: /CARTON|CART\.?/, label: 'Carton' },
+    { re: /PLASTICO|PLAST\.?|PLAS\.?/, label: 'Plastico' },
+    { re: /MADERA|MAD\.?/, label: 'Madera' },
+    { re: /EUROPOOL/, label: 'EuroPool' },
+    { re: /IFCO/, label: 'IFCO' },
+    { re: /PALET|PALLET/, label: 'Palet' }
+  ], 'Sin envase')
+}
+
+function extractQuality(text) {
+  return firstMatch(text, [
+    { re: /CAT\s*\.?\s*II|CATII|CATEGORIA\s*II/, label: 'Categoria II' },
+    { re: /EXTRA/, label: 'Extra' },
+    { re: /PREMIUM/, label: 'Premium' },
+    { re: /BUENO/, label: 'Bueno' },
+    { re: /SEGUNDA|2A|2ª/, label: 'Segunda' }
+  ], 'Categoria I / sin indicar')
+}
+
+function extractBrand(text) {
+  return firstMatch(text, [
+    { re: /LASARTE/, label: 'Lasarte' },
+    { re: /BELLE\s+ANDALOUSE/, label: 'Belle Andalouse' },
+    { re: /PITUFO/, label: 'Pitufo' },
+    { re: /GENERIC[OA]/, label: 'Generico' }
+  ], '')
+}
+
 function getLineClassification(row) {
-  const text = normalizeText(row.product)
+  const raw = row?.product || ''
+  const cacheKey = String(row?.id || '') + '|' + raw
+  if (classificationCache.has(cacheKey)) return classificationCache.get(cacheKey)
+
+  const text = normalizeText(raw)
   let type = 'Producto'
-  let product = 'Otros'
-  let subproduct = 'Sin subproducto'
+  let product = 'Otros productos'
+  let variety = 'Sin variedad'
+  let citrusType = 'Otros productos'
 
   if (/FIANZA|EUROPOOL MOD|PLASTICO IFCO/.test(text)) {
     type = 'Fianza'
     product = 'Envases'
+    citrusType = 'Envases'
     const model = text.match(/MOD\.?\s*([0-9]+)/)?.[1]
-    subproduct = text.includes('IFCO') ? 'IFCO' : model ? `EuroPool ${model}` : 'EuroPool'
+    variety = text.includes('IFCO') ? 'IFCO' : model ? 'EuroPool ' + model : 'EuroPool'
   } else if (/TRANSP|PORTE|PORTES/.test(text)) {
     type = 'Transporte'
-    product = 'Logística'
-    subproduct = text.includes('ENVASE') ? 'Transporte envases' : 'Transporte mercancía'
+    product = 'Logistica'
+    citrusType = 'Logistica'
+    variety = text.includes('ENVASE') ? 'Transporte envases' : 'Transporte mercancia'
   } else if (/COMISI/.test(text)) {
-    type = 'Comisión'
+    type = 'Comision'
     product = 'Servicios'
-    subproduct = 'Comisiones'
-  } else if (/SERVICIO|MANIPUL|TRIAGE|CONFECCION/.test(text)) {
+    citrusType = 'Servicios'
+    variety = 'Comisiones'
+  } else if (/SERVICIO|MANIPUL|TRIAGE|CONFECCION|CONFECC/.test(text)) {
     type = 'Servicio'
     product = 'Servicios'
-    subproduct = text.includes('MANIP') ? 'Manipulación' : 'Confección'
-  } else if (/ABONO|DTO|DESCUENTO|DIFERENCIA|DIFERFENCIA|DEVOLUCION|\bDEV\b/.test(text)) {
-    type = 'Abono / ajuste'
+    citrusType = 'Servicios'
+    variety = text.includes('MANIP') ? 'Manipulacion' : 'Confeccion'
   } else if (/CAJA CARTON|EUROPALET|PALET FRUTERO|CAJON CAMPO|PALLET|PALET/.test(text)) {
     type = 'Envase'
     product = 'Envases'
-    subproduct = text.includes('PALET') || text.includes('PALLET') ? 'Palet' : 'Caja'
+    citrusType = 'Envases'
+    variety = text.includes('PALET') || text.includes('PALLET') ? 'Palet' : 'Caja'
+  } else if (/ABONO|DTO|DESCUENTO|DIFERENCIA|DIFERFENCIA|DEVOLUCION|\bDEV\b/.test(text)) {
+    type = 'Abono / ajuste'
   } else if (/VENTAS NARANJAS|VENTA NARANJA/.test(text)) {
     type = 'Venta resumen'
     product = 'Naranja'
-    subproduct = 'Resumen'
+    citrusType = 'Naranja'
+    variety = 'Resumen'
   }
 
   if (type === 'Producto' || type === 'Abono / ajuste' || type === 'Venta resumen') {
-    if (/MAND|CLEMENTINA|ORRI/.test(text)) product = 'Mandarina'
-    else if (/LIMON|LIM /.test(text)) product = 'Limón'
+    if (/MAND|CLEMENTINA|ORRI|TANGO|NADORCOTT|NOVA|SATSUMA/.test(text)) product = 'Mandarina'
+    else if (/LIMON|\bLIM\b|VERNA|FINO/.test(text)) product = 'Limon'
     else if (/POMELO|GRAPEFRUIT/.test(text)) product = 'Pomelo'
-    else if (/NAR|NAVEL|SALUSTIANA|VALENCIA|LANE|BARBERINA|CARACARA|NARANJA/.test(text)) product = 'Naranja'
-    else if (type !== 'Venta resumen') product = 'Otros productos'
+    else if (/NAR|NAVEL|SALUSTIANA|VALENCIA|LANE|BARBERINA|CARACARA|BARNFIELD|NARANJA/.test(text)) product = 'Naranja'
 
-    const varieties = [
-      'NAVELINA','LANE LATE','SALUSTIANA','VALENCIA MIDKNIGHT','VALENCIA DELTA',
-      'VALENCIA LATE','NAVEL POWEL','NAVEL POWELL','BARBERINA','CARACARA',
-      'BARNFIELD','ORRI','CLEMENTINA'
-    ]
-    subproduct = varieties.find(v => text.includes(v)) || (product === 'Naranja' ? 'Naranja genérica' : product)
+    citrusType = product
+    variety = firstMatch(text, [
+      { re: /VALENCIA\s+MIDKNIGHT|MIDKNIGHT/, label: 'Valencia Midknight' },
+      { re: /VALENCIA\s+DELTA|\bDELTA\b/, label: 'Valencia Delta' },
+      { re: /VALENCIA\s+LATE/, label: 'Valencia Late' },
+      { re: /LANE\s+LATE|\bLANE\b/, label: 'Lane Late' },
+      { re: /NAVEL\s+POWELL|NAVEL\s+POWEL|\bPOWELL\b|\bPOWEL\b/, label: 'Navel Powell' },
+      { re: /NAVEL\s+CARACARA|CARA\s*CARA|CARACARA/, label: 'Navel Caracara' },
+      { re: /NAVELINA/, label: 'Navelina' },
+      { re: /SALUSTIANA/, label: 'Salustiana' },
+      { re: /BARBERINA/, label: 'Barberina' },
+      { re: /BARNFIELD/, label: 'Barnfield' },
+      { re: /\bNAVEL\b/, label: 'Navel' },
+      { re: /ORRI/, label: 'Orri' },
+      { re: /CLEMENTINA/, label: 'Clementina' },
+      { re: /TANGO/, label: 'Tango' },
+      { re: /NADORCOTT/, label: 'Nadorcott' },
+      { re: /NOVA/, label: 'Nova' },
+      { re: /SATSUMA/, label: 'Satsuma' },
+      { re: /VERNA/, label: 'Verna' },
+      { re: /FINO/, label: 'Fino' }
+    ], product === 'Naranja' ? 'Naranja generica' : product)
   }
 
-  const packaging =
-    text.includes('D-PACK') ? 'D-Pack' :
-    text.includes('GIRSAC') ? 'Girsac' :
-    text.includes('GRANEL') ? 'Granel' :
-    text.includes('EMPAQUETADO') ? 'Empaquetado' :
-    text.includes('MALLA') ? 'Malla' : ''
+  const caliber = extractCaliber(text)
+  const quality = extractQuality(text)
+  const format = extractFormat(text)
+  const container = extractContainer(text)
+  const brand = extractBrand(text)
+  const packaging = format === 'Sin formato' ? '' : format
+  const subParts = [variety]
+  if (caliber !== 'Sin calibre') subParts.push(caliber)
+  if (format !== 'Sin formato') subParts.push(format)
+  if (container !== 'Sin envase') subParts.push(container)
+  const subproduct = subParts.filter(Boolean).join(' · ')
 
-  return { type, product, subproduct, packaging }
+  const result = { type, product, citrusType, variety, caliber, quality, format, packaging, container, brand, subproduct }
+  classificationCache.set(cacheKey, result)
+  return result
 }
 
-function getInvoiceTypes() { return [...new Set(data.map(d => getLineClassification(d).type))].sort() }
-function getProductBases() { return [...new Set(data.map(d => getLineClassification(d).product))].sort() }
-function getSubproducts(base = '') {
+function getClassValues(field, filter = {}) {
   return [...new Set(data
-    .filter(d => !base || getLineClassification(d).product === base)
-    .map(d => getLineClassification(d).subproduct)
+    .map(d => getLineClassification(d))
+    .filter(cls => !filter.type || cls.type === filter.type)
+    .filter(cls => !filter.product || cls.product === filter.product)
+    .filter(cls => !filter.variety || cls.variety === filter.variety)
+    .map(cls => cls[field])
+    .filter(Boolean)
   )].sort()
 }
+
+function getInvoiceTypes() { return getClassValues('type') }
+function getProductBases() { return getClassValues('product') }
+function getSubproducts(base = '') { return getClassValues('subproduct', { product: base }) }
+function getVarieties(base = '') { return getClassValues('variety', { product: base }) }
+function getCalibers(base = '', variety = '') { return getClassValues('caliber', { product: base, variety }) }
+function getFormats(base = '') { return getClassValues('format', { product: base }) }
 
 function getChartColors() {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark'
@@ -244,7 +349,6 @@ function populateAllSelects() {
   const clientes = getClientes()
   const invoiceTypes = getInvoiceTypes()
   const productBases = getProductBases()
-  const subproducts = getSubproducts()
 
   const pd = document.getElementById('product-datalist')
   if (pd) pd.innerHTML = products.map(p => `<option value="${p}">`).join('')
@@ -292,7 +396,14 @@ function populateAllSelects() {
   }
   ;['ventas-type','table-type','product-type'].forEach(id => setOpts(id, invoiceTypes, 'Todos los tipos'))
   ;['ventas-base','table-base','product-base'].forEach(id => setOpts(id, productBases, 'Todos los productos'))
-  ;['ventas-subproduct','table-subproduct','product-subproduct'].forEach(id => setOpts(id, subproducts, 'Todos los subproductos'))
+  ;['ventas','table','product'].forEach(scope => {
+    const base = document.getElementById(`${scope}-base`)?.value || ''
+    setOpts(`${scope}-variety`, getVarieties(base), 'Todas las variedades')
+    const variety = document.getElementById(`${scope}-variety`)?.value || ''
+    setOpts(`${scope}-caliber`, getCalibers(base, variety), 'Todos los calibres')
+    setOpts(`${scope}-format`, getFormats(base), 'Todos los formatos')
+    setOpts(`${scope}-subproduct`, getSubproducts(base), 'Todos los subproductos')
+  })
   setOpts('ventas-year',    campaigns,    'Todas las campañas', campaignLabel)
   setOpts('ventas-cliente', clientes, 'Todos los clientes')
 
@@ -303,6 +414,7 @@ function populateAllSelects() {
     if (pv) vm.value = pv
   }
 }
+window.populateAllSelects = populateAllSelects
 
 // =========== DASHBOARD ===========
 function renderDashboard() {
@@ -531,6 +643,9 @@ function getVentasFiltered() {
   const type = document.getElementById('ventas-type')?.value || ''
   const base = document.getElementById('ventas-base')?.value || ''
   const subproduct = document.getElementById('ventas-subproduct')?.value || ''
+  const variety = document.getElementById('ventas-variety')?.value || ''
+  const caliber = document.getElementById('ventas-caliber')?.value || ''
+  const format = document.getElementById('ventas-format')?.value || ''
 
   return data.filter(d => {
     const cls = getLineClassification(d)
@@ -540,6 +655,9 @@ function getVentasFiltered() {
     if (type && cls.type !== type) return false
     if (base && cls.product !== base) return false
     if (subproduct && cls.subproduct !== subproduct) return false
+    if (variety && cls.variety !== variety) return false
+    if (caliber && cls.caliber !== caliber) return false
+    if (format && cls.format !== format) return false
     if (q     && !d.product.toLowerCase().includes(q) && !(d.referencia||'').toLowerCase().includes(q)) return false
     return true
   }).sort((a,b) => (getCampaignStart(b) - getCampaignStart(a)) || (campaignMonthIndex(a) - campaignMonthIndex(b)))
@@ -559,7 +677,8 @@ function renderVentas() {
   document.getElementById('ventas-summary').innerHTML = `
     <span class="summary-chip">${fmtNum(total)} registros</span>
     <span class="summary-chip">${new Set(rows.map(d => getLineClassification(d).type)).size} tipos</span>
-    <span class="summary-chip">${new Set(rows.map(d => getLineClassification(d).subproduct)).size} subproductos</span>
+    <span class="summary-chip">${new Set(rows.map(d => getLineClassification(d).variety)).size} variedades</span>
+    <span class="summary-chip">${new Set(rows.map(d => getLineClassification(d).caliber)).size} calibres</span>
     ${hasRev ? `<span class="summary-chip chip-gold">${fmtEur(rev)} facturado</span>` : ''}
     ${hasKg  ? `<span class="summary-chip chip-blue">${fmtKg(kg)} vendidos</span>` : ''}
   `
@@ -575,7 +694,7 @@ function renderVentas() {
         <td class="td-date">${campaignLabel(getCampaignStart(d))}${d.month ? ' · '+ MONTHS[d.month-1] : ''}</td>
         <td class="td-doc">${d.documento || '—'}</td>
         <td class="td-client" title="${nombre}">${nombre.length>28?nombre.slice(0,28)+'…':nombre}</td>
-        <td class="td-product" title="${d.product}"><strong>${cls.subproduct}</strong><br><span style="color:var(--color-text-muted)">${cls.type} · ${cls.product}</span></td>
+        <td class="td-product" title="${d.product}"><strong>${cls.variety}</strong><br><span style="color:var(--color-text-muted)">${cls.caliber} · ${cls.format}</span><br><span style="color:var(--color-text-muted)">${cls.type} · ${cls.product}</span></td>
         <td class="td-ref">${d.referencia || '—'}</td>
         <td class="td-num">${d.kilos > 0 ? fmtKg(d.kilos) : d.unidades > 0 ? fmtNum(d.unidades)+' ud' : '—'}</td>
         <td class="td-num">${d.price > 0 ? fmtEur(d.price) : '—'}</td>
@@ -627,11 +746,17 @@ function getProductFilteredRows() {
   const type = document.getElementById('product-type')?.value || ''
   const base = document.getElementById('product-base')?.value || ''
   const subproduct = document.getElementById('product-subproduct')?.value || ''
+  const variety = document.getElementById('product-variety')?.value || ''
+  const caliber = document.getElementById('product-caliber')?.value || ''
+  const format = document.getElementById('product-format')?.value || ''
   return data.filter(d => {
     const cls = getLineClassification(d)
     if (type && cls.type !== type) return false
     if (base && cls.product !== base) return false
     if (subproduct && cls.subproduct !== subproduct) return false
+    if (variety && cls.variety !== variety) return false
+    if (caliber && cls.caliber !== caliber) return false
+    if (format && cls.format !== format) return false
     return true
   })
 }
@@ -642,6 +767,9 @@ function renderProductos() {
   const totalKg = sum(rows.map(d => d.kilos))
   const byType = {}
   const byProduct = {}
+  const byVariety = {}
+  const byCaliber = {}
+  const byFormat = {}
   const bySubproduct = {}
   rows.forEach(d => {
     const cls = getLineClassification(d)
@@ -654,6 +782,9 @@ function renderProductos() {
     }
     add(byType, cls.type)
     add(byProduct, cls.product)
+    add(byVariety, `${cls.product}||${cls.variety}`)
+    add(byCaliber, `${cls.variety}||${cls.caliber}`)
+    add(byFormat, `${cls.product}||${cls.format}`)
     add(bySubproduct, `${cls.product}||${cls.subproduct}`)
   })
 
@@ -663,11 +794,15 @@ function renderProductos() {
     <span class="summary-chip chip-gold">${fmtEur(totalRev)} base IVA</span>
     <span class="summary-chip chip-blue">${fmtKg(totalKg)}</span>
     <span class="summary-chip">${Object.keys(byType).length} tipos</span>
-    <span class="summary-chip">${Object.keys(bySubproduct).length} subproductos</span>
+    <span class="summary-chip">${Object.keys(byVariety).length} variedades</span>
+    <span class="summary-chip">${Object.keys(byCaliber).length} calibres</span>
   `
 
   const typeRows = Object.entries(byType).sort((a,b)=>b[1].rev-a[1].rev || b[1].n-a[1].n)
   const productRows = Object.entries(byProduct).sort((a,b)=>b[1].rev-a[1].rev || b[1].n-a[1].n)
+  const varietyRows = Object.entries(byVariety).sort((a,b)=>b[1].rev-a[1].rev || b[1].n-a[1].n).slice(0, 120)
+  const caliberRows = Object.entries(byCaliber).sort((a,b)=>b[1].rev-a[1].rev || b[1].n-a[1].n).slice(0, 120)
+  const formatRows = Object.entries(byFormat).sort((a,b)=>b[1].rev-a[1].rev || b[1].n-a[1].n).slice(0, 120)
   const subRows = Object.entries(bySubproduct).sort((a,b)=>b[1].rev-a[1].rev || b[1].n-a[1].n).slice(0, 150)
 
   const renderMetricRows = items => items.map(([key,v]) => {
@@ -693,8 +828,22 @@ function renderProductos() {
         <div class="table-wrap"><table class="data-table"><thead><tr><th>Producto</th><th>Líneas</th><th>Refs.</th><th>KG</th><th>Base IVA</th></tr></thead><tbody>${renderMetricRows(productRows)}</tbody></table></div>
       </div>
     </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="chart-label"><span>Variedades / tipo de naranja</span></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Variedad</th><th>Lineas</th><th>Refs.</th><th>KG</th><th>Base IVA</th></tr></thead><tbody>${renderMetricRows(varietyRows)}</tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="chart-label"><span>Calibres</span></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Calibre</th><th>Lineas</th><th>Refs.</th><th>KG</th><th>Base IVA</th></tr></thead><tbody>${renderMetricRows(caliberRows)}</tbody></table></div>
+      </div>
+    </div>
     <div class="card">
-      <div class="chart-label"><span>Subproductos</span></div>
+      <div class="chart-label"><span>Formatos y envases</span></div>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Formato</th><th>Lineas</th><th>Refs.</th><th>KG</th><th>Base IVA</th></tr></thead><tbody>${renderMetricRows(formatRows)}</tbody></table></div>
+    </div>
+    <div class="card">
+      <div class="chart-label"><span>Subproductos detallados</span></div>
       <div class="table-wrap"><table class="data-table"><thead><tr><th>Subproducto</th><th>Líneas</th><th>Refs.</th><th>KG</th><th>Base IVA</th></tr></thead><tbody>${renderMetricRows(subRows)}</tbody></table></div>
     </div>
   `
@@ -1157,6 +1306,9 @@ function renderTable() {
   const typeF  = document.getElementById('table-type')?.value || ''
   const baseF  = document.getElementById('table-base')?.value || ''
   const subF   = document.getElementById('table-subproduct')?.value || ''
+  const varietyF = document.getElementById('table-variety')?.value || ''
+  const caliberF = document.getElementById('table-caliber')?.value || ''
+  const formatF = document.getElementById('table-format')?.value || ''
 
   let rows = data.filter(d => {
     const cls = getLineClassification(d)
@@ -1167,6 +1319,9 @@ function renderTable() {
     if (typeF) ok = ok && cls.type === typeF
     if (baseF) ok = ok && cls.product === baseF
     if (subF)  ok = ok && cls.subproduct === subF
+    if (varietyF) ok = ok && cls.variety === varietyF
+    if (caliberF) ok = ok && cls.caliber === caliberF
+    if (formatF) ok = ok && cls.format === formatF
     return ok
   }).sort((a,b) => getCampaignStart(b) - getCampaignStart(a) || campaignMonthIndex(a) - campaignMonthIndex(b))
 
@@ -1186,7 +1341,7 @@ function renderTable() {
       const cls = getLineClassification(d)
       return `<tr>
         <td><strong>${d.product}</strong></td>
-        <td>${cls.type}<br><span style="color:var(--color-text-muted)">${cls.product} · ${cls.subproduct}</span></td>
+        <td>${cls.type}<br><span style="color:var(--color-text-muted)">${cls.product} · ${cls.variety} · ${cls.caliber}</span><br><span style="color:var(--color-text-muted)">${cls.format} · ${cls.quality}</span></td>
         <td>${campaignLabel(getCampaignStart(d))}</td>
         <td>${d.month ? MONTH_NAMES[d.month-1] : '—'}</td>
         <td class="td-num">${d.price > 0 ? fmtEur(d.price) : '—'}</td>

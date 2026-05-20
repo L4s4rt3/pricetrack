@@ -1,7 +1,7 @@
 import { supabase } from './supabase.js'
 
 const TABLE = 'precios'
-const PAGE_SIZE = 5000
+const PAGE_SIZE = 1000
 
 export async function fetchAllRecords() {
   let all = [], from = 0
