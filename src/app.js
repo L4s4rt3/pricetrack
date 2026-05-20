@@ -340,6 +340,7 @@ function rerenderCurrentPage() {
   else if (active === 'page-predicciones') renderPredictions()
   else if (active === 'page-datos')   renderTable()
   else if (active === 'page-buscar')  initSearch()
+  else if (active === 'page-confeccion') window.renderConfeccion && renderConfeccion()
 }
 
 // =========== NAVIGATION ===========
@@ -359,6 +360,7 @@ function navigate(page, btn) {
     if (page === 'predicciones') renderPredictions()
     if (page === 'datos')        renderTable()
     if (page === 'buscar')       initSearch()
+    if (page === 'confeccion')   window.renderConfeccion && renderConfeccion()
   })
 }
 window.navigate = navigate

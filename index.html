@@ -258,6 +258,11 @@ table { border-collapse: collapse; width: 100%; }
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       Buscar precio
     </button>
+    <span class="nav-label" style="margin-top:var(--space-4)">Nueva app</span>
+    <button class="nav-item" onclick="navigate('confeccion', this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Confección
+    </button>
   </nav>
 
   <main class="content" id="main-content">
@@ -551,6 +556,41 @@ table { border-collapse: collapse; width: 100%; }
       <div id="search-results"></div>
     </div>
 
+    <!-- ===== CONFECCIÓN ===== -->
+    <div class="page" id="page-confeccion">
+      <h2 class="page-title">Confección por Palet</h2>
+      <p class="page-subtitle">Consulta detallada de palets confeccionados, lotes, cajas y productos</p>
+      <div class="filters-bar" id="conf-filters">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" class="form-input" id="conf-search" placeholder="Buscar cliente, producto, lote…" oninput="confPage=0;renderConfeccion()">
+        </div>
+        <select class="form-select" id="conf-cliente" onchange="confPage=0;renderConfeccion()" style="min-width:180px"></select>
+        <select class="form-select" id="conf-producto-base" onchange="confPage=0;renderConfeccion()" style="min-width:150px"></select>
+        <select class="form-select" id="conf-variedad" onchange="confPage=0;renderConfeccion()" style="min-width:150px"></select>
+        <select class="form-select" id="conf-calibre" onchange="confPage=0;renderConfeccion()" style="min-width:130px"></select>
+        <select class="form-select" id="conf-tipo-caja" onchange="confPage=0;renderConfeccion()" style="min-width:130px"></select>
+        <select class="form-select" id="conf-situacion" onchange="confPage=0;renderConfeccion()" style="min-width:130px"></select>
+        <input type="date" class="form-input" id="conf-fecha-from" onchange="confPage=0;renderConfeccion()" style="min-width:140px" title="Fecha desde">
+        <input type="date" class="form-input" id="conf-fecha-to" onchange="confPage=0;renderConfeccion()" style="min-width:140px" title="Fecha hasta">
+      </div>
+      <div class="summary-bar" id="conf-summary"></div>
+      <div class="table-wrap" style="margin-bottom:var(--space-3)">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Nº Palet</th><th>Producto</th><th>Base / Variedad</th><th>Calibre</th>
+              <th>Cajas</th><th>Tipo Caja</th><th>Kg Netos</th><th>Kg Fact.</th>
+              <th>Cliente</th><th>Documento</th><th>Lote</th><th>Situación</th>
+            </tr>
+          </thead>
+          <tbody id="conf-tbody"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="conf-pagination"></div>
+      <p class="ventas-count" id="conf-count"></p>
+    </div>
+
   </main>
 </div>
 
@@ -707,6 +747,7 @@ table { border-collapse: collapse; width: 100%; }
 
 <script type="module">
 import { initApp } from '/src/app.js'
+import '/src/confeccion.js'
 document.addEventListener('DOMContentLoaded', () => initApp())
 </script>
 </body>
