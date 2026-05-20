@@ -235,7 +235,7 @@ table { border-collapse: collapse; width: 100%; }
     </button>
     <button class="nav-item" onclick="navigate('comparar', this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="4"/><polyline points="6 10 12 4 18 10"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
-      Comparar años
+      Comparar campañas
     </button>
     <button class="nav-item" onclick="navigate('predicciones', this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
@@ -256,7 +256,7 @@ table { border-collapse: collapse; width: 100%; }
     <!-- ===== DASHBOARD ===== -->
     <div class="page active" id="page-dashboard">
       <h2 class="page-title">Resumen de Precios</h2>
-      <p class="page-subtitle" id="dashboard-subtitle">Visión general del mercado en todos los años registrados</p>
+      <p class="page-subtitle" id="dashboard-subtitle">Visión general del mercado por campañas registradas</p>
       <div class="grid-4" id="kpi-grid"></div>
       <div class="card" style="margin-bottom: var(--space-8)">
         <div class="chart-label"><span>Histórico y evolución</span></div>
@@ -298,7 +298,7 @@ table { border-collapse: collapse; width: 100%; }
         </div>
       </div>
       <div class="card">
-        <div class="chart-label"><span>Precios por mes (año seleccionado)</span>
+        <div class="chart-label"><span>Precios por mes (campaña seleccionada)</span>
           <select class="form-select" id="dash-year-select" style="width:auto; padding: 4px 8px; font-size: var(--text-xs);" onchange="renderDashCharts()"></select>
         </div>
         <div class="chart-wrap" style="height:220px"><canvas id="monthlyChart"></canvas></div>
@@ -362,12 +362,12 @@ table { border-collapse: collapse; width: 100%; }
         </div>
         <div class="form-group">
           <select class="form-select" id="trend-year-from" onchange="renderTrendCharts()">
-            <option value="">Desde año</option>
+            <option value="">Desde campaña</option>
           </select>
         </div>
         <div class="form-group">
           <select class="form-select" id="trend-year-to" onchange="renderTrendCharts()">
-            <option value="">Hasta año</option>
+            <option value="">Hasta campaña</option>
           </select>
         </div>
       </div>
@@ -380,11 +380,11 @@ table { border-collapse: collapse; width: 100%; }
       </div>
       <div class="grid-2">
         <div class="card">
-          <div class="chart-label"><span>Precio máximo y mínimo por año</span></div>
+          <div class="chart-label"><span>Precio máximo y mínimo por campaña</span></div>
           <div class="chart-wrap" style="height:240px"><canvas id="trendMinMaxChart"></canvas></div>
         </div>
         <div class="card">
-          <div class="chart-label"><span>Variación % año a año</span></div>
+          <div class="chart-label"><span>Variación % campaña a campaña</span></div>
           <div class="chart-wrap" style="height:240px"><canvas id="trendVarChart"></canvas></div>
         </div>
       </div>
@@ -396,22 +396,22 @@ table { border-collapse: collapse; width: 100%; }
 
     <!-- ===== COMPARAR ===== -->
     <div class="page" id="page-comparar">
-      <h2 class="page-title">Comparar Años</h2>
-      <p class="page-subtitle">Selecciona dos o más años para comparar los precios directamente</p>
+      <h2 class="page-title">Comparar Campañas</h2>
+      <p class="page-subtitle">Selecciona dos o más campañas para comparar los precios directamente</p>
       <div style="margin-bottom: var(--space-4)">
         <div class="form-group" style="max-width:220px; margin-bottom: var(--space-4)">
           <label class="form-label">Producto</label>
           <select class="form-select" id="cmp-product" onchange="renderCompare()"></select>
         </div>
-        <p style="font-size: var(--text-xs); color: var(--color-text-muted); margin-bottom: var(--space-3)">Haz clic en los años para seleccionarlos (mínimo 2):</p>
+        <p style="font-size: var(--text-xs); color: var(--color-text-muted); margin-bottom: var(--space-3)">Haz clic en las campañas para seleccionarlas (mínimo 2):</p>
         <div class="compare-grid" id="cmp-year-cards"></div>
       </div>
       <div class="card" id="compare-chart-card" style="display:none">
-        <div class="chart-label"><span>Comparativa mensual entre años seleccionados</span></div>
+        <div class="chart-label"><span>Comparativa mensual entre campañas seleccionadas</span></div>
         <div class="chart-wrap" style="height:300px"><canvas id="compareChart"></canvas></div>
       </div>
       <div class="card" style="margin-top: var(--space-6); display: none" id="compare-table-card">
-        <div class="section-title">Resumen estadístico por año</div>
+        <div class="section-title">Resumen estadístico por campaña</div>
         <div class="table-wrap"><table class="data-table" id="compare-stats-table"></table></div>
       </div>
     </div>
@@ -448,7 +448,7 @@ table { border-collapse: collapse; width: 100%; }
           <input type="text" class="form-input" id="table-search" placeholder="Buscar producto..." oninput="renderTable()">
         </div>
         <select class="form-select" id="table-year-filter" onchange="renderTable()" style="min-width:130px">
-          <option value="">Todos los años</option>
+          <option value="">Todas las campañas</option>
         </select>
         <select class="form-select" id="table-cat-filter" onchange="renderTable()" style="min-width:150px">
           <option value="">Todas las categorías</option>
@@ -470,7 +470,7 @@ table { border-collapse: collapse; width: 100%; }
         <table class="data-table">
           <thead>
             <tr>
-              <th>Producto</th><th>Categoría</th><th>Año</th><th>Mes</th>
+              <th>Producto</th><th>Categoría</th><th>Campaña</th><th>Mes</th>
               <th>PVP (€/kg)</th><th>Base IVA (€)</th><th>Kilos</th><th>Cliente</th>
               <th>Variación</th><th></th>
             </tr>
@@ -484,7 +484,7 @@ table { border-collapse: collapse; width: 100%; }
     <!-- ===== BUSCAR ===== -->
     <div class="page" id="page-buscar">
       <h2 class="page-title">Consulta de Precios</h2>
-      <p class="page-subtitle">Busca el precio de un producto en cualquier año o período</p>
+      <p class="page-subtitle">Busca el precio de un producto en cualquier campaña o período</p>
       <div class="card" style="max-width:600px; margin-bottom: var(--space-8)">
         <div class="section-title">Búsqueda rápida</div>
         <div class="form-row">
@@ -493,7 +493,7 @@ table { border-collapse: collapse; width: 100%; }
             <select class="form-select" id="search-product"></select>
           </div>
           <div class="form-group">
-            <label class="form-label">Año</label>
+            <label class="form-label">Campaña</label>
             <select class="form-select" id="search-year">
               <option value="">Todos</option>
             </select>

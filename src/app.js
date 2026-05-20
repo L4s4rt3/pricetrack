@@ -20,9 +20,21 @@ const CHART_COLORS = ['#01696f','#006494','#437a22','#d19900','#da7101','#a12c7b
 // =========== UTILITIES ===========
 function getUnique(field) { return [...new Set(data.map(d => d[field]).filter(Boolean))].sort() }
 function getYears() { return [...new Set(data.map(d => d.year))].map(Number).sort() }
+function getCampaignStart(d) { return d.month && d.month >= 10 ? d.year : d.year - 1 }
+function getCampaigns() { return [...new Set(data.map(getCampaignStart))].map(Number).sort() }
+function campaignLabel(c) { return `${c}/${String((c + 1) % 100).padStart(2, '0')}` }
+function sameCampaign(d, c) { return getCampaignStart(d) === Number(c) }
+function campaignMonthIndex(d) { return d.month ? (d.month + 2) % 12 : 0 }
+const CAMPAIGN_MONTHS = ['Oct','Nov','Dic','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep']
 function getProducts() { return getUnique('product') }
 function getCategories() { return getUnique('category') }
-function getClientes() { return [...new Set(data.map(d => d.denominacion_social || d.cliente).filter(Boolean))].sort() }
+function getClientes() { return [...new Set(data.map(getClientLabel).filter(v => v && v !== '—'))].sort() }
+function getClientName(d) {
+  const code = String(d.cliente || '').trim()
+  const name = String(d.denominacion_social || '').trim()
+  return name && name !== code ? name : ''
+}
+function getClientLabel(d) { return getClientName(d) || d.cliente || '—' }
 function avg(arr) { const v = arr.filter(x => x > 0); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : 0 }
 function sum(arr) { return arr.reduce((a,b)=>a+b,0) }
 function fmt(n) { return (+n).toFixed(2) }
@@ -148,6 +160,7 @@ window.navigate = navigate
 // =========== POPULATE SELECTS ===========
 function populateAllSelects() {
   const years    = getYears()
+  const campaigns = getCampaigns()
   const products = getProducts()
   const cats     = getCategories()
   const clientes = getClientes()
@@ -162,13 +175,13 @@ function populateAllSelects() {
 
   const dys = document.getElementById('dash-year-select')
   if (dys) {
-    dys.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('')
-    if (years.length) dys.value = years[years.length - 1]
+    dys.innerHTML = campaigns.map(c => `<option value="${c}">${campaignLabel(c)}</option>`).join('')
+    if (campaigns.length) dys.value = campaigns[campaigns.length - 1]
   }
 
   const yearSel = document.getElementById('history-year')
   const catSel  = document.getElementById('history-category')
-  if (yearSel) yearSel.innerHTML = `<option value="">Todos los años</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
+  if (yearSel) yearSel.innerHTML = `<option value="">Todas las campañas</option>` + campaigns.map(c => `<option value="${c}">${campaignLabel(c)}</option>`).join('')
   if (catSel)  catSel.innerHTML  = `<option value="">Todas las categorías</option>` + cats.map(c => `<option value="${c}">${c}</option>`).join('')
 
   ;['trend-product','cmp-product','search-product','pred-product'].forEach(id => {
@@ -177,26 +190,26 @@ function populateAllSelects() {
   })
   ;['trend-year-from','trend-year-to'].forEach(id => {
     const el = document.getElementById(id)
-    if (el) el.innerHTML = `<option value="">—</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
+    if (el) el.innerHTML = `<option value="">—</option>` + campaigns.map(c => `<option value="${c}">${campaignLabel(c)}</option>`).join('')
   })
 
   const tyf = document.getElementById('table-year-filter')
-  if (tyf) tyf.innerHTML = `<option value="">Todos los años</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
+  if (tyf) tyf.innerHTML = `<option value="">Todas las campañas</option>` + campaigns.map(c => `<option value="${c}">${campaignLabel(c)}</option>`).join('')
   const tcf = document.getElementById('table-cat-filter')
   if (tcf) tcf.innerHTML = `<option value="">Todas las categorías</option>` + cats.map(c => `<option value="${c}">${c}</option>`).join('')
 
   const sy = document.getElementById('search-year')
-  if (sy) sy.innerHTML = `<option value="">Todos</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
+  if (sy) sy.innerHTML = `<option value="">Todas</option>` + campaigns.map(c => `<option value="${c}">${campaignLabel(c)}</option>`).join('')
 
   // Ventas selects
-  const setOpts = (id, items, allLabel) => {
+  const setOpts = (id, items, allLabel, labelFn = i => i) => {
     const el = document.getElementById(id)
     if (!el) return
     const prev = el.value
-    el.innerHTML = `<option value="">${allLabel}</option>` + items.map(i => `<option value="${i}">${i}</option>`).join('')
+    el.innerHTML = `<option value="">${allLabel}</option>` + items.map(i => `<option value="${i}">${labelFn(i)}</option>`).join('')
     if (items.includes(prev) || items.map(String).includes(prev)) el.value = prev
   }
-  setOpts('ventas-year',    years,    'Todos los años')
+  setOpts('ventas-year',    campaigns,    'Todas las campañas', campaignLabel)
   setOpts('ventas-cliente', clientes, 'Todos los clientes')
 
   const vm = document.getElementById('ventas-month')
@@ -209,16 +222,16 @@ function populateAllSelects() {
 
 // =========== DASHBOARD ===========
 function renderDashboard() {
-  const years = getYears()
-  if (!years.length) {
+  const campaigns = getCampaigns()
+  if (!campaigns.length) {
     document.getElementById('kpi-grid').innerHTML = '<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Sin datos</div><div class="kpi-value" style="font-size:var(--text-base)">Importa registros para comenzar</div></div>'
     return
   }
 
-  const latestYear  = years[years.length - 1]
-  const prevYear    = years[years.length - 2]
-  const latestPrices = data.filter(d => d.year === latestYear && d.price > 0).map(d => d.price)
-  const prevPrices   = data.filter(d => d.year === prevYear  && d.price > 0).map(d => d.price)
+  const latestCampaign = campaigns[campaigns.length - 1]
+  const prevCampaign   = campaigns[campaigns.length - 2]
+  const latestPrices = data.filter(d => sameCampaign(d, latestCampaign) && d.price > 0).map(d => d.price)
+  const prevPrices   = data.filter(d => sameCampaign(d, prevCampaign)  && d.price > 0).map(d => d.price)
   const avgLatest   = avg(latestPrices)
   const avgPrev     = avg(prevPrices)
   const pctChange   = avgPrev ? ((avgLatest - avgPrev) / avgPrev) * 100 : 0
@@ -229,14 +242,14 @@ function renderDashboard() {
   const allPrices    = data.filter(d => d.price > 0).map(d => d.price)
 
   document.getElementById('dashboard-subtitle').textContent =
-    `Datos de ${years[0]} a ${latestYear} · ${data.length.toLocaleString('es')} registros`
+    `Datos de campaña ${campaignLabel(campaigns[0])} a ${campaignLabel(latestCampaign)} · ${data.length.toLocaleString('es')} registros`
 
   let kpis
   if (hasRevenue) {
     const nClientes = new Set(data.map(d => d.cliente).filter(Boolean)).size || getClientes().length
     kpis = [
-      { label: 'Facturación total',      value: fmtEur(totalRevenue),   delta: `${years[0]}–${latestYear}`, flat: true },
-      { label: `Precio medio ${latestYear}`, value: fmtEur(avgLatest), delta: fmtPct(pctChange), up: pctChange > 0 },
+      { label: 'Facturación total',      value: fmtEur(totalRevenue),   delta: `${campaignLabel(campaigns[0])}–${campaignLabel(latestCampaign)}`, flat: true },
+      { label: `Precio medio ${campaignLabel(latestCampaign)}`, value: fmtEur(avgLatest), delta: fmtPct(pctChange), up: pctChange > 0 },
       { label: 'Kilos vendidos',          value: totalKg > 0 ? fmtKg(totalKg) : '—', delta: 'Total acumulado', flat: true },
       { label: 'Clientes únicos',         value: String(nClientes), delta: 'Cartera activa', flat: true },
     ]
@@ -246,10 +259,10 @@ function renderDashboard() {
     const maxRec = data.find(d => d.price === maxP)
     const minRec = data.find(d => d.price === minP)
     kpis = [
-      { label: `Precio medio ${latestYear}`, value: `${fmt(avgLatest)} €`, delta: fmtPct(pctChange), up: pctChange > 0 },
-      { label: 'Total registros',  value: data.length.toLocaleString('es'), delta: `${years.length} años`, flat: true },
-      { label: 'Precio máximo histórico', value: `${fmt(maxP)} €`, delta: `${maxRec?.product} (${maxRec?.year})`, flat: true },
-      { label: 'Precio mínimo histórico', value: `${fmt(minP)} €`, delta: `${minRec?.product} (${minRec?.year})`, flat: true },
+      { label: `Precio medio ${campaignLabel(latestCampaign)}`, value: `${fmt(avgLatest)} €`, delta: fmtPct(pctChange), up: pctChange > 0 },
+      { label: 'Total registros',  value: data.length.toLocaleString('es'), delta: `${campaigns.length} campañas`, flat: true },
+      { label: 'Precio máximo histórico', value: `${fmt(maxP)} €`, delta: maxRec ? `${maxRec.product} (${campaignLabel(getCampaignStart(maxRec))})` : '—', flat: true },
+      { label: 'Precio mínimo histórico', value: `${fmt(minP)} €`, delta: minRec ? `${minRec.product} (${campaignLabel(getCampaignStart(minRec))})` : '—', flat: true },
     ]
   }
 
@@ -266,21 +279,21 @@ function renderDashboard() {
 
 function renderDashCharts() {
   const selProduct = document.getElementById('dash-product-select')?.value
-  const selYear    = parseInt(document.getElementById('dash-year-select')?.value)
-  const years      = getYears()
+  const selCampaign = parseInt(document.getElementById('dash-year-select')?.value)
+  const campaigns   = getCampaigns()
   const colors     = getChartColors()
   const hasRevenue = data.some(d => d.base_iva > 0)
 
   destroyChart('annualChart')
-  const annualData = years.map(y => {
-    const filtered = data.filter(d => d.year === y && (!selProduct || d.product === selProduct))
+  const annualData = campaigns.map(c => {
+    const filtered = data.filter(d => sameCampaign(d, c) && (!selProduct || d.product === selProduct))
     return hasRevenue ? sum(filtered.map(d => d.base_iva)) : avg(filtered.filter(d=>d.price>0).map(d => d.price))
   })
   const ctx1 = document.getElementById('annualChart')?.getContext('2d')
   if (ctx1) charts['annualChart'] = new Chart(ctx1, {
     type: 'line',
     data: {
-      labels: years,
+      labels: campaigns.map(campaignLabel),
       datasets: [{
         label: selProduct || (hasRevenue ? 'Facturación' : 'Precio medio'),
         data: annualData,
@@ -293,9 +306,9 @@ function renderDashCharts() {
 
   destroyChart('categoryChart')
   const cats = getCategories()
-  const yr   = selYear || (years.length ? years[years.length-1] : new Date().getFullYear())
+  const camp = selCampaign || (campaigns.length ? campaigns[campaigns.length-1] : getCampaignStart({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 }))
   const catVals = cats.map(c => {
-    const rows = data.filter(x => x.category === c && x.year === yr)
+    const rows = data.filter(x => x.category === c && sameCampaign(x, camp))
     return hasRevenue ? sum(rows.map(x => x.base_iva)) : avg(rows.filter(x=>x.price>0).map(x => x.price))
   })
   const ctx2 = document.getElementById('categoryChart')?.getContext('2d')
@@ -312,19 +325,19 @@ function renderDashCharts() {
   })
 
   destroyChart('monthlyChart')
-  const yr2 = selYear || (years.length ? years[years.length-1] : new Date().getFullYear())
+  const camp2 = selCampaign || (campaigns.length ? campaigns[campaigns.length-1] : camp)
   const monthlyData = Array.from({length:12}, (_,i) => {
-    const m = i+1
-    const filtered = data.filter(d => d.year === yr2 && d.month === m && (!selProduct || d.product === selProduct))
+    const m = i < 3 ? i + 10 : i - 2
+    const filtered = data.filter(d => sameCampaign(d, camp2) && d.month === m && (!selProduct || d.product === selProduct))
     return hasRevenue ? sum(filtered.map(d => d.base_iva)) : avg(filtered.filter(d=>d.price>0).map(d => d.price))
   })
   const ctx3 = document.getElementById('monthlyChart')?.getContext('2d')
   if (ctx3) charts['monthlyChart'] = new Chart(ctx3, {
     type: 'bar',
     data: {
-      labels: MONTHS,
+      labels: CAMPAIGN_MONTHS,
       datasets: [{
-        label: `${selProduct || (hasRevenue ? 'Facturación' : 'Media')} ${yr2}`,
+        label: `${selProduct || (hasRevenue ? 'Facturación' : 'Media')} ${campaignLabel(camp2)}`,
         data: monthlyData,
         backgroundColor: monthlyData.map(v => v > 0 && v === Math.max(...monthlyData.filter(Boolean)) ? '#da7101' : 'rgba(1,105,111,0.65)'),
         borderRadius: 5, borderSkipped: false,
@@ -338,17 +351,17 @@ window.renderDashCharts = renderDashCharts
 // =========== HISTORY VIEW ===========
 function getHistoryFiltered() {
   const q    = (document.getElementById('history-search')?.value || '').toLowerCase()
-  const year = parseInt(document.getElementById('history-year')?.value || '') || null
+  const campaign = parseInt(document.getElementById('history-year')?.value || '') || null
   const cat  = document.getElementById('history-category')?.value || ''
   let rows = data.filter(r => {
     let ok = true
     if (q)    ok = ok && r.product.toLowerCase().includes(q)
-    if (year) ok = ok && r.year === year
+    if (campaign) ok = ok && sameCampaign(r, campaign)
     if (cat)  ok = ok && r.category === cat
     return ok
   })
   rows = rows.sort((a,b) => {
-    const d = (a.year - b.year) || ((a.month||0) - (b.month||0))
+    const d = (getCampaignStart(a) - getCampaignStart(b)) || (campaignMonthIndex(a) - campaignMonthIndex(b))
     return (document.getElementById('history-sort')?.value || 'desc') === 'asc' ? d : -d
   })
   return rows
@@ -395,7 +408,7 @@ function renderHistoryView() {
     charts['historyChart'] = new Chart(ctx, {
       type: 'line',
       data: {
-        labels: top.items.map(x => `${MONTHS[(x.month||1)-1]} ${x.year}`),
+        labels: top.items.map(x => `${MONTHS[(x.month||1)-1]} ${campaignLabel(getCampaignStart(x))}`),
         datasets: [{
           label: top.product,
           data: top.items.map(x => x.price),
@@ -415,7 +428,7 @@ function renderHistoryView() {
       return `
         <div class="history-item">
           <h4>${g.product}</h4>
-          <div class="meta"><span>${g.category}</span><span>${g.items.length} registros</span><span>${g.items[0].year} → ${g.items[g.items.length-1].year}</span></div>
+          <div class="meta"><span>${g.category}</span><span>${g.items.length} registros</span><span>${campaignLabel(getCampaignStart(g.items[0]))} → ${campaignLabel(getCampaignStart(g.items[g.items.length-1]))}</span></div>
           <div class="value">${fmt(g.items[g.items.length-1].price)} €</div>
           <div class="evolution-pill ${deltaG >= 0 ? 'evo-up' : 'evo-down'}">${deltaG >= 0 ? '▲' : '▼'} ${fmtPct(deltaG)}</div>
         </div>
@@ -428,17 +441,17 @@ window.renderHistoryView = renderHistoryView
 // =========== VENTAS PAGE ===========
 function getVentasFiltered() {
   const q    = (document.getElementById('ventas-search')?.value || '').toLowerCase()
-  const year = parseInt(document.getElementById('ventas-year')?.value) || null
+  const campaign = parseInt(document.getElementById('ventas-year')?.value) || null
   const month= parseInt(document.getElementById('ventas-month')?.value) || null
   const cli  = (document.getElementById('ventas-cliente')?.value || '').toLowerCase()
 
   return data.filter(d => {
-    if (year  && d.year  !== year)  return false
+    if (campaign && !sameCampaign(d, campaign)) return false
     if (month && d.month !== month) return false
-    if (cli   && !(d.denominacion_social || d.cliente || '').toLowerCase().includes(cli)) return false
+    if (cli   && !`${getClientLabel(d)} ${d.cliente || ''}`.toLowerCase().includes(cli)) return false
     if (q     && !d.product.toLowerCase().includes(q) && !(d.referencia||'').toLowerCase().includes(q)) return false
     return true
-  }).sort((a,b) => (b.year - a.year) || ((b.month||0) - (a.month||0)))
+  }).sort((a,b) => (getCampaignStart(b) - getCampaignStart(a)) || (campaignMonthIndex(a) - campaignMonthIndex(b)))
 }
 
 function renderVentas() {
@@ -463,9 +476,9 @@ function renderVentas() {
     tbody.innerHTML = `<tr><td colspan="9" class="empty-row">Sin resultados para los filtros aplicados</td></tr>`
   } else {
     tbody.innerHTML = pageRows.map(d => {
-      const nombre = d.denominacion_social || d.cliente || '—'
+      const nombre = getClientLabel(d)
       return `<tr>
-        <td class="td-date">${d.year}${d.month ? '/'+ String(d.month).padStart(2,'0') : ''}</td>
+        <td class="td-date">${campaignLabel(getCampaignStart(d))}${d.month ? ' · '+ MONTHS[d.month-1] : ''}</td>
         <td class="td-doc">${d.documento || '—'}</td>
         <td class="td-client" title="${nombre}">${nombre.length>28?nombre.slice(0,28)+'…':nombre}</td>
         <td class="td-product" title="${d.product}">${d.product.length>32?d.product.slice(0,32)+'…':d.product}</td>
@@ -525,7 +538,7 @@ function renderClientes() {
   const clientMap = {}
   data.forEach(d => {
     const code = d.cliente || ''
-    const name = d.denominacion_social || d.cliente || 'Desconocido'
+    const name = getClientName(d) || 'Sin nombre'
     const key  = code || name
     if (!clientMap[key]) clientMap[key] = { code, name, rev:0, kg:0, n:0, years:new Set(), lastYear:0 }
     clientMap[key].rev += d.base_iva
@@ -686,16 +699,17 @@ window.renderTrends = renderTrends
 
 function renderTrendCharts() {
   const selProduct = document.getElementById('trend-product')?.value
-  const yearFrom   = parseInt(document.getElementById('trend-year-from')?.value) || null
-  const yearTo     = parseInt(document.getElementById('trend-year-to')?.value)   || null
-  let years        = getYears()
-  if (yearFrom) years = years.filter(y => y >= yearFrom)
-  if (yearTo)   years = years.filter(y => y <= yearTo)
+  const campaignFrom = parseInt(document.getElementById('trend-year-from')?.value) || null
+  const campaignTo   = parseInt(document.getElementById('trend-year-to')?.value)   || null
+  let campaigns      = getCampaigns()
+  if (campaignFrom) campaigns = campaigns.filter(c => c >= campaignFrom)
+  if (campaignTo)   campaigns = campaigns.filter(c => c <= campaignTo)
+  const years = campaigns
 
   const filtered = data.filter(d => {
     if (selProduct && d.product !== selProduct) return false
-    if (yearFrom   && d.year < yearFrom)        return false
-    if (yearTo     && d.year > yearTo)          return false
+    if (campaignFrom && getCampaignStart(d) < campaignFrom) return false
+    if (campaignTo   && getCampaignStart(d) > campaignTo)   return false
     return true
   })
 
@@ -706,8 +720,8 @@ function renderTrendCharts() {
   const hasPrices= prices.length > 0
 
   // Use revenue per year when no price data; otherwise use avg price
-  const yearVals = years.map(y => {
-    const yd = filtered.filter(d => d.year === y)
+  const yearVals = campaigns.map(c => {
+    const yd = filtered.filter(d => sameCampaign(d, c))
     if (hasPrices) return avg(yd.filter(d => d.price > 0).map(d => d.price))
     return sum(yd.map(d => d.base_iva))
   })
@@ -735,15 +749,16 @@ function renderTrendCharts() {
   // Main trend chart: monthly price avg OR monthly revenue
   destroyChart('trendMainChart')
   const allPts = []
-  for (const y of years) {
-    for (let m = 1; m <= 12; m++) {
-      const yd = filtered.filter(d => d.year === y && d.month === m)
+  for (const c of campaigns) {
+    for (let i = 0; i < 12; i++) {
+      const m = i < 3 ? i + 10 : i - 2
+      const yd = filtered.filter(d => sameCampaign(d, c) && d.month === m)
       if (hasPrices) {
         const pts = yd.filter(d => d.price > 0).map(d => d.price)
-        if (pts.length) allPts.push({ label: `${MONTHS[m-1]} ${y}`, value: avg(pts) })
+        if (pts.length) allPts.push({ label: `${MONTHS[m-1]} ${campaignLabel(c)}`, value: avg(pts) })
       } else {
         const rev = sum(yd.map(d => d.base_iva))
-        if (rev > 0) allPts.push({ label: `${MONTHS[m-1]} ${y}`, value: rev })
+        if (rev > 0) allPts.push({ label: `${MONTHS[m-1]} ${campaignLabel(c)}`, value: rev })
       }
     }
   }
@@ -760,13 +775,13 @@ function renderTrendCharts() {
   if (c2) {
     const ds = hasPrices
       ? [
-          { label: 'Máximo', data: years.map(y => { const p = filtered.filter(d => d.year===y && d.price>0).map(d=>d.price); return p.length ? Math.max(...p) : 0 }), backgroundColor: 'rgba(218,113,1,0.7)', borderRadius: 4 },
-          { label: 'Mínimo', data: years.map(y => { const p = filtered.filter(d => d.year===y && d.price>0).map(d=>d.price); return p.length ? Math.min(...p) : 0 }), backgroundColor: 'rgba(1,105,111,0.5)', borderRadius: 4 },
+          { label: 'Máximo', data: campaigns.map(c => { const p = filtered.filter(d => sameCampaign(d, c) && d.price>0).map(d=>d.price); return p.length ? Math.max(...p) : 0 }), backgroundColor: 'rgba(218,113,1,0.7)', borderRadius: 4 },
+          { label: 'Mínimo', data: campaigns.map(c => { const p = filtered.filter(d => sameCampaign(d, c) && d.price>0).map(d=>d.price); return p.length ? Math.min(...p) : 0 }), backgroundColor: 'rgba(1,105,111,0.5)', borderRadius: 4 },
         ]
       : [{ label: 'Facturación anual', data: yearVals, backgroundColor: 'rgba(1,105,111,0.6)', borderRadius: 4 }]
     charts['trendMinMaxChart'] = new Chart(c2, {
       type: 'bar',
-      data: { labels: years, datasets: ds },
+      data: { labels: campaigns.map(campaignLabel), datasets: ds },
       options: { ...baseChartOptions(colors, '€'), plugins: { legend: { display: hasPrices, labels: { color: colors.tick } } } }
     })
   }
@@ -774,9 +789,9 @@ function renderTrendCharts() {
   // Variation % year over year
   destroyChart('trendVarChart')
   const c3 = document.getElementById('trendVarChart')?.getContext('2d')
-  if (c3 && years.length > 1) charts['trendVarChart'] = new Chart(c3, {
+  if (c3 && campaigns.length > 1) charts['trendVarChart'] = new Chart(c3, {
     type: 'bar',
-    data: { labels: years.slice(1), datasets: [{ label: 'Variación %', data: varPct.slice(1), backgroundColor: varPct.slice(1).map(v => v >= 0 ? 'rgba(67,122,34,0.7)' : 'rgba(161,44,123,0.7)'), borderRadius: 4 }] },
+    data: { labels: campaigns.slice(1).map(campaignLabel), datasets: [{ label: 'Variación %', data: varPct.slice(1), backgroundColor: varPct.slice(1).map(v => v >= 0 ? 'rgba(67,122,34,0.7)' : 'rgba(161,44,123,0.7)'), borderRadius: 4 }] },
     options: baseChartOptions(colors, '%')
   })
 
@@ -785,7 +800,7 @@ function renderTrendCharts() {
   const c4 = document.getElementById('trendVolChart')?.getContext('2d')
   if (c4 && (hasRev || totKg > 0)) charts['trendVolChart'] = new Chart(c4, {
     type: 'bar',
-    data: { labels: years, datasets: [{ label: hasRev ? 'Facturación (€)' : 'KG vendidos', data: years.map(y => { const yd = filtered.filter(d => d.year===y); return hasRev ? sum(yd.map(d=>d.base_iva)) : sum(yd.map(d=>d.kilos)) }), backgroundColor: 'rgba(0,100,148,0.6)', borderRadius: 4 }] },
+    data: { labels: campaigns.map(campaignLabel), datasets: [{ label: hasRev ? 'Facturación (€)' : 'KG vendidos', data: campaigns.map(c => { const yd = filtered.filter(d => sameCampaign(d, c)); return hasRev ? sum(yd.map(d=>d.base_iva)) : sum(yd.map(d=>d.kilos)) }), backgroundColor: 'rgba(0,100,148,0.6)', borderRadius: 4 }] },
     options: baseChartOptions(colors, hasRev ? '€' : 'kg')
   })
 }
@@ -796,13 +811,13 @@ function renderComparePage() { selectedYears = []; renderYearCards() }
 window.renderComparePage = renderComparePage
 
 function renderYearCards() {
-  const years  = getYears()
+  const years  = getCampaigns()
   const hasRev = data.some(d=>d.base_iva>0)
   document.getElementById('cmp-year-cards').innerHTML = years.map(y => {
-    const yd  = data.filter(d=>d.year===y)
+    const yd  = data.filter(d=>sameCampaign(d, y))
     const val = hasRev ? sum(yd.map(d=>d.base_iva)) : avg(yd.filter(d=>d.price>0).map(d=>d.price))
     return `<div class="compare-year-card ${selectedYears.includes(y)?'selected':''}" onclick="toggleYear(${y})">
-      <div class="yr">${y}</div>
+      <div class="yr">${campaignLabel(y)}</div>
       <div class="avg">${hasRev ? fmtEur(val) : fmtEur(val)+' media'}</div>
     </div>`
   }).join('')
@@ -827,21 +842,22 @@ function renderCompare() {
   destroyChart('compareChart')
   const datasets = selectedYears.sort().map((y,i) => {
     const mdata = Array.from({length:12},(_,mi) => {
-      const pts = data.filter(d=>d.year===y && d.month===mi+1 && (!selProduct||d.product===selProduct))
+      const m = mi < 3 ? mi + 10 : mi - 2
+      const pts = data.filter(d=>sameCampaign(d, y) && d.month===m && (!selProduct||d.product===selProduct))
       return hasRev ? sum(pts.map(d=>d.base_iva)) : avg(pts.filter(d=>d.price>0).map(d=>d.price)) || null
     })
-    return { label:String(y), data:mdata, borderColor:CHART_COLORS[i%CHART_COLORS.length], backgroundColor:CHART_COLORS[i%CHART_COLORS.length]+'15', borderWidth:2, tension:0.35, fill:false, pointRadius:4 }
+    return { label:campaignLabel(y), data:mdata, borderColor:CHART_COLORS[i%CHART_COLORS.length], backgroundColor:CHART_COLORS[i%CHART_COLORS.length]+'15', borderWidth:2, tension:0.35, fill:false, pointRadius:4 }
   })
   const c = document.getElementById('compareChart')?.getContext('2d')
   if (c) charts['compareChart'] = new Chart(c, {
     type: 'line',
-    data: { labels: MONTHS, datasets },
+    data: { labels: CAMPAIGN_MONTHS, datasets },
     options: { ...baseChartOptions(colors, hasRev?'€':'€/kg'), plugins:{ legend:{ display:true, labels:{ color:colors.tick, font:{size:12} } } } }
   })
 
   let prevAvg = null
   const rows = selectedYears.sort().map(y => {
-    const pts = data.filter(d=>d.year===y && (!selProduct||d.product===selProduct))
+    const pts = data.filter(d=>sameCampaign(d, y) && (!selProduct||d.product===selProduct))
     const a   = avg(pts.filter(d=>d.price>0).map(d=>d.price))
     const rev = sum(pts.map(d=>d.base_iva))
     const kg  = sum(pts.map(d=>d.kilos))
@@ -850,7 +866,7 @@ function renderCompare() {
     const pct = prevAvg && a ? ((a-prevAvg)/prevAvg)*100 : null
     prevAvg = a
     return `<tr>
-      <td><strong>${y}</strong></td><td>${fmtEur(a)}/kg</td>
+      <td><strong>${campaignLabel(y)}</strong></td><td>${fmtEur(a)}/kg</td>
       <td>${fmtEur(mx)}</td><td>${mn>0?fmtEur(mn):'—'}</td>
       ${hasRev?`<td class="td-total">${fmtEur(rev)}</td>`:''}
       ${kg>0?`<td class="td-num">${fmtKg(kg)}</td>`:''}
@@ -963,16 +979,16 @@ window.renderPredictions = renderPredictions
 // =========== DATOS / TABLA ===========
 function renderTable() {
   const search = document.getElementById('table-search')?.value.toLowerCase() || ''
-  const yearF  = parseInt(document.getElementById('table-year-filter')?.value) || null
+  const campaignF  = parseInt(document.getElementById('table-year-filter')?.value) || null
   const catF   = document.getElementById('table-cat-filter')?.value || ''
 
   let rows = data.filter(d => {
     let ok = true
     if (search) ok = ok && (d.product.toLowerCase().includes(search) || d.category.toLowerCase().includes(search) || (d.denominacion_social||'').toLowerCase().includes(search))
-    if (yearF) ok = ok && d.year === yearF
+    if (campaignF) ok = ok && sameCampaign(d, campaignF)
     if (catF)  ok = ok && d.category === catF
     return ok
-  }).sort((a,b) => b.year - a.year || (a.month||0) - (b.month||0))
+  }).sort((a,b) => getCampaignStart(b) - getCampaignStart(a) || campaignMonthIndex(a) - campaignMonthIndex(b))
 
   const tbody = document.getElementById('table-body')
   if (!rows.length) {
@@ -986,11 +1002,11 @@ function renderTable() {
         delta = fmtPct(pct)
         badgeCls = pct > 0.5 ? 'badge-up' : pct < -0.5 ? 'badge-down' : 'badge-flat'
       }
-      const nombre = d.denominacion_social || d.cliente || '—'
+      const nombre = getClientLabel(d)
       return `<tr>
         <td><strong>${d.product}</strong></td>
         <td>${d.category}</td>
-        <td>${d.year}</td>
+        <td>${campaignLabel(getCampaignStart(d))}</td>
         <td>${d.month ? MONTH_NAMES[d.month-1] : '—'}</td>
         <td class="td-num">${d.price > 0 ? fmtEur(d.price) : '—'}</td>
         <td class="td-total">${d.base_iva !== 0 ? fmtEur(d.base_iva) : '—'}</td>
@@ -1011,13 +1027,13 @@ window.initSearch = initSearch
 
 function doSearch() {
   const product = document.getElementById('search-product').value
-  const year    = parseInt(document.getElementById('search-year').value) || null
+  const campaign = parseInt(document.getElementById('search-year').value) || null
   const month   = parseInt(document.getElementById('search-month').value) || null
 
   let results = data.filter(d => {
     let ok = true
     if (product) ok = ok && d.product === product
-    if (year)    ok = ok && d.year === year
+    if (campaign) ok = ok && sameCampaign(d, campaign)
     if (month)   ok = ok && d.month === month
     return ok
   })
@@ -1043,15 +1059,15 @@ function doSearch() {
       <table class="data-table">
         <thead><tr><th>Producto</th><th>Categoría</th><th>Año</th><th>Mes</th><th>Precio</th><th>Base IVA</th><th>Cliente</th></tr></thead>
         <tbody>
-          ${results.sort((a,b)=>b.year-a.year||(a.month||0)-(b.month||0)).slice(0,100).map(d=>`
+          ${results.sort((a,b)=>getCampaignStart(b)-getCampaignStart(a)||campaignMonthIndex(a)-campaignMonthIndex(b)).slice(0,100).map(d=>`
             <tr>
               <td><strong>${d.product}</strong></td>
               <td>${d.category}</td>
-              <td>${d.year}</td>
+              <td>${campaignLabel(getCampaignStart(d))}</td>
               <td>${d.month ? MONTH_NAMES[d.month-1] : '—'}</td>
               <td class="td-num">${d.price>0?fmtEur(d.price):'—'}</td>
               <td class="td-total">${d.base_iva!==0?fmtEur(d.base_iva):'—'}</td>
-              <td>${d.denominacion_social||d.cliente||'—'}</td>
+              <td>${getClientLabel(d)}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -1226,7 +1242,25 @@ async function decodeText(buf) {
   if (text.includes('�')) text = new TextDecoder('windows-1252').decode(buf)
   return text
 }
+function normalizeHeaderName(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/�|Ã.|Â./g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
 
+function headerMatches(field, header, synonyms) {
+  const normalizedHeader = normalizeHeaderName(header)
+  const normalizedSynonyms = synonyms.map(normalizeHeaderName)
+  if (normalizedSynonyms.some(s => normalizedHeader === s || normalizedHeader.includes(s))) return true
+  if (field === 'denominacion_social') {
+    return normalizedHeader.includes('social') && (normalizedHeader.includes('denomin') || normalizedHeader.includes('razon') || normalizedHeader.includes('nombre'))
+  }
+  return false
+}
 async function handleFileSelect(e) {
   const file = e.target.files[0]
   if (!file) return
@@ -1247,8 +1281,10 @@ async function handleFileSelect(e) {
       headers = raw[0].map(h => String(h).trim())
       rows    = raw.slice(1).filter(r=>r.some(c=>String(c).trim())).map(r=>{ while(r.length<headers.length)r.push(''); return r.map(c=>String(c).trim()) })
     } else if (ext === 'csv' && typeof Papa !== 'undefined') {
-      const text = await file.text()
-      const result = Papa.parse(text, { header: false, skipEmptyLines: true })
+      const buf = await file.arrayBuffer()
+      const text = await decodeText(buf)
+      const delimiter = detectDelimiter(text.split('\n')[0] || '')
+      const result = Papa.parse(text, { delimiter, header: false, skipEmptyLines: true })
       if (!result.data || result.data.length < 2) { showToast('⚠ El archivo no tiene datos','error'); return }
       headers = result.data[0].map(h => String(h).trim().replace(/^"|"$/g,''))
       rows = result.data.slice(1).filter(r => r.some(c => String(c).trim())).map(r => {
@@ -1285,15 +1321,14 @@ function buildMapping(headers) {
   for (const field of fields) {
     const syns = COLUMN_AUTO_MAP[field] || []
     const idx  = headers.findIndex(h => {
-      const hl = h.toLowerCase().trim()
-      return syns.some(s => hl === s.toLowerCase() || hl.includes(s.toLowerCase()))
+      return headerMatches(field, h, syns)
     })
     map[field] = idx >= 0 ? idx : null
   }
   if (map.año === null || map.mes === null) {
     const dateIdx = headers.findIndex(h => {
-      const hl = h.toLowerCase().trim()
-      return ['fecha','date','fecha albarán','fecha tra.'].some(s=>hl===s||hl.startsWith(s))
+      const hl = normalizeHeaderName(h)
+      return ['fecha','date','fecha albaran','fecha tra'].some(s=>hl===s||hl.startsWith(s))
     })
     if (dateIdx >= 0) { if(map.año===null) map.año=dateIdx; if(map.mes===null) map.mes=dateIdx }
   }
