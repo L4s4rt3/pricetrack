@@ -61,6 +61,82 @@ function detectCategory(name) {
   return 'Sin categoría'
 }
 
+function normalizeText(value) {
+  return String(value || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+}
+
+function getLineClassification(row) {
+  const text = normalizeText(row.product)
+  let type = 'Producto'
+  let product = 'Otros'
+  let subproduct = 'Sin subproducto'
+
+  if (/FIANZA|EUROPOOL MOD|PLASTICO IFCO/.test(text)) {
+    type = 'Fianza'
+    product = 'Envases'
+    const model = text.match(/MOD\.?\s*([0-9]+)/)?.[1]
+    subproduct = text.includes('IFCO') ? 'IFCO' : model ? `EuroPool ${model}` : 'EuroPool'
+  } else if (/TRANSP|PORTE|PORTES/.test(text)) {
+    type = 'Transporte'
+    product = 'Logística'
+    subproduct = text.includes('ENVASE') ? 'Transporte envases' : 'Transporte mercancía'
+  } else if (/COMISI/.test(text)) {
+    type = 'Comisión'
+    product = 'Servicios'
+    subproduct = 'Comisiones'
+  } else if (/SERVICIO|MANIPUL|TRIAGE|CONFECCION/.test(text)) {
+    type = 'Servicio'
+    product = 'Servicios'
+    subproduct = text.includes('MANIP') ? 'Manipulación' : 'Confección'
+  } else if (/ABONO|DTO|DESCUENTO|DIFERENCIA|DIFERFENCIA|DEVOLUCION|\bDEV\b/.test(text)) {
+    type = 'Abono / ajuste'
+  } else if (/CAJA CARTON|EUROPALET|PALET FRUTERO|CAJON CAMPO|PALLET|PALET/.test(text)) {
+    type = 'Envase'
+    product = 'Envases'
+    subproduct = text.includes('PALET') || text.includes('PALLET') ? 'Palet' : 'Caja'
+  } else if (/VENTAS NARANJAS|VENTA NARANJA/.test(text)) {
+    type = 'Venta resumen'
+    product = 'Naranja'
+    subproduct = 'Resumen'
+  }
+
+  if (type === 'Producto' || type === 'Abono / ajuste' || type === 'Venta resumen') {
+    if (/MAND|CLEMENTINA|ORRI/.test(text)) product = 'Mandarina'
+    else if (/LIMON|LIM /.test(text)) product = 'Limón'
+    else if (/POMELO|GRAPEFRUIT/.test(text)) product = 'Pomelo'
+    else if (/NAR|NAVEL|SALUSTIANA|VALENCIA|LANE|BARBERINA|CARACARA|NARANJA/.test(text)) product = 'Naranja'
+    else if (type !== 'Venta resumen') product = 'Otros productos'
+
+    const varieties = [
+      'NAVELINA','LANE LATE','SALUSTIANA','VALENCIA MIDKNIGHT','VALENCIA DELTA',
+      'VALENCIA LATE','NAVEL POWEL','NAVEL POWELL','BARBERINA','CARACARA',
+      'BARNFIELD','ORRI','CLEMENTINA'
+    ]
+    subproduct = varieties.find(v => text.includes(v)) || (product === 'Naranja' ? 'Naranja genérica' : product)
+  }
+
+  const packaging =
+    text.includes('D-PACK') ? 'D-Pack' :
+    text.includes('GIRSAC') ? 'Girsac' :
+    text.includes('GRANEL') ? 'Granel' :
+    text.includes('EMPAQUETADO') ? 'Empaquetado' :
+    text.includes('MALLA') ? 'Malla' : ''
+
+  return { type, product, subproduct, packaging }
+}
+
+function getInvoiceTypes() { return [...new Set(data.map(d => getLineClassification(d).type))].sort() }
+function getProductBases() { return [...new Set(data.map(d => getLineClassification(d).product))].sort() }
+function getSubproducts(base = '') {
+  return [...new Set(data
+    .filter(d => !base || getLineClassification(d).product === base)
+    .map(d => getLineClassification(d).subproduct)
+  )].sort()
+}
+
 function getChartColors() {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark'
   return {
@@ -129,6 +205,7 @@ function rerenderCurrentPage() {
   populateAllSelects()
   if (active === 'page-dashboard')    { renderDashboard(); renderHistoryView() }
   else if (active === 'page-ventas')  renderVentas()
+  else if (active === 'page-productos') renderProductos()
   else if (active === 'page-clientes') renderClientes()
   else if (active === 'page-tendencias') renderTrends()
   else if (active === 'page-comparar')  renderComparePage()
@@ -147,6 +224,7 @@ function navigate(page, btn) {
   requestAnimationFrame(() => {
     if (page === 'dashboard')    { renderDashboard(); renderHistoryView() }
     if (page === 'ventas')       { ventasPage = 0; renderVentas() }
+    if (page === 'productos')    renderProductos()
     if (page === 'clientes')     { clienteSelected = null; renderClientes() }
     if (page === 'tendencias')   renderTrendCharts()
     if (page === 'comparar')     renderComparePage()
@@ -164,6 +242,9 @@ function populateAllSelects() {
   const products = getProducts()
   const cats     = getCategories()
   const clientes = getClientes()
+  const invoiceTypes = getInvoiceTypes()
+  const productBases = getProductBases()
+  const subproducts = getSubproducts()
 
   const pd = document.getElementById('product-datalist')
   if (pd) pd.innerHTML = products.map(p => `<option value="${p}">`).join('')
@@ -209,6 +290,9 @@ function populateAllSelects() {
     el.innerHTML = `<option value="">${allLabel}</option>` + items.map(i => `<option value="${i}">${labelFn(i)}</option>`).join('')
     if (items.includes(prev) || items.map(String).includes(prev)) el.value = prev
   }
+  ;['ventas-type','table-type','product-type'].forEach(id => setOpts(id, invoiceTypes, 'Todos los tipos'))
+  ;['ventas-base','table-base','product-base'].forEach(id => setOpts(id, productBases, 'Todos los productos'))
+  ;['ventas-subproduct','table-subproduct','product-subproduct'].forEach(id => setOpts(id, subproducts, 'Todos los subproductos'))
   setOpts('ventas-year',    campaigns,    'Todas las campañas', campaignLabel)
   setOpts('ventas-cliente', clientes, 'Todos los clientes')
 
@@ -444,11 +528,18 @@ function getVentasFiltered() {
   const campaign = parseInt(document.getElementById('ventas-year')?.value) || null
   const month= parseInt(document.getElementById('ventas-month')?.value) || null
   const cli  = (document.getElementById('ventas-cliente')?.value || '').toLowerCase()
+  const type = document.getElementById('ventas-type')?.value || ''
+  const base = document.getElementById('ventas-base')?.value || ''
+  const subproduct = document.getElementById('ventas-subproduct')?.value || ''
 
   return data.filter(d => {
+    const cls = getLineClassification(d)
     if (campaign && !sameCampaign(d, campaign)) return false
     if (month && d.month !== month) return false
     if (cli   && !`${getClientLabel(d)} ${d.cliente || ''}`.toLowerCase().includes(cli)) return false
+    if (type && cls.type !== type) return false
+    if (base && cls.product !== base) return false
+    if (subproduct && cls.subproduct !== subproduct) return false
     if (q     && !d.product.toLowerCase().includes(q) && !(d.referencia||'').toLowerCase().includes(q)) return false
     return true
   }).sort((a,b) => (getCampaignStart(b) - getCampaignStart(a)) || (campaignMonthIndex(a) - campaignMonthIndex(b)))
@@ -467,6 +558,8 @@ function renderVentas() {
 
   document.getElementById('ventas-summary').innerHTML = `
     <span class="summary-chip">${fmtNum(total)} registros</span>
+    <span class="summary-chip">${new Set(rows.map(d => getLineClassification(d).type)).size} tipos</span>
+    <span class="summary-chip">${new Set(rows.map(d => getLineClassification(d).subproduct)).size} subproductos</span>
     ${hasRev ? `<span class="summary-chip chip-gold">${fmtEur(rev)} facturado</span>` : ''}
     ${hasKg  ? `<span class="summary-chip chip-blue">${fmtKg(kg)} vendidos</span>` : ''}
   `
@@ -477,11 +570,12 @@ function renderVentas() {
   } else {
     tbody.innerHTML = pageRows.map(d => {
       const nombre = getClientLabel(d)
+      const cls = getLineClassification(d)
       return `<tr>
         <td class="td-date">${campaignLabel(getCampaignStart(d))}${d.month ? ' · '+ MONTHS[d.month-1] : ''}</td>
         <td class="td-doc">${d.documento || '—'}</td>
         <td class="td-client" title="${nombre}">${nombre.length>28?nombre.slice(0,28)+'…':nombre}</td>
-        <td class="td-product" title="${d.product}">${d.product.length>32?d.product.slice(0,32)+'…':d.product}</td>
+        <td class="td-product" title="${d.product}"><strong>${cls.subproduct}</strong><br><span style="color:var(--color-text-muted)">${cls.type} · ${cls.product}</span></td>
         <td class="td-ref">${d.referencia || '—'}</td>
         <td class="td-num">${d.kilos > 0 ? fmtKg(d.kilos) : d.unidades > 0 ? fmtNum(d.unidades)+' ud' : '—'}</td>
         <td class="td-num">${d.price > 0 ? fmtEur(d.price) : '—'}</td>
@@ -527,6 +621,85 @@ function setVentasPageSize(sz) {
   renderVentas()
 }
 window.setVentasPageSize = setVentasPageSize
+
+// =========== PRODUCTOS PAGE ===========
+function getProductFilteredRows() {
+  const type = document.getElementById('product-type')?.value || ''
+  const base = document.getElementById('product-base')?.value || ''
+  const subproduct = document.getElementById('product-subproduct')?.value || ''
+  return data.filter(d => {
+    const cls = getLineClassification(d)
+    if (type && cls.type !== type) return false
+    if (base && cls.product !== base) return false
+    if (subproduct && cls.subproduct !== subproduct) return false
+    return true
+  })
+}
+
+function renderProductos() {
+  const rows = getProductFilteredRows()
+  const totalRev = sum(rows.map(d => d.base_iva))
+  const totalKg = sum(rows.map(d => d.kilos))
+  const byType = {}
+  const byProduct = {}
+  const bySubproduct = {}
+  rows.forEach(d => {
+    const cls = getLineClassification(d)
+    const add = (obj, key) => {
+      if (!obj[key]) obj[key] = { n:0, rev:0, kg:0, refs:new Set() }
+      obj[key].n += 1
+      obj[key].rev += d.base_iva
+      obj[key].kg += d.kilos
+      if (d.referencia) obj[key].refs.add(d.referencia)
+    }
+    add(byType, cls.type)
+    add(byProduct, cls.product)
+    add(bySubproduct, `${cls.product}||${cls.subproduct}`)
+  })
+
+  const summary = document.getElementById('product-summary')
+  if (summary) summary.innerHTML = `
+    <span class="summary-chip">${fmtNum(rows.length)} líneas</span>
+    <span class="summary-chip chip-gold">${fmtEur(totalRev)} base IVA</span>
+    <span class="summary-chip chip-blue">${fmtKg(totalKg)}</span>
+    <span class="summary-chip">${Object.keys(byType).length} tipos</span>
+    <span class="summary-chip">${Object.keys(bySubproduct).length} subproductos</span>
+  `
+
+  const typeRows = Object.entries(byType).sort((a,b)=>b[1].rev-a[1].rev || b[1].n-a[1].n)
+  const productRows = Object.entries(byProduct).sort((a,b)=>b[1].rev-a[1].rev || b[1].n-a[1].n)
+  const subRows = Object.entries(bySubproduct).sort((a,b)=>b[1].rev-a[1].rev || b[1].n-a[1].n).slice(0, 150)
+
+  const renderMetricRows = items => items.map(([key,v]) => {
+    const label = key.includes('||') ? key.split('||')[1] : key
+    const parent = key.includes('||') ? key.split('||')[0] : ''
+    return `<tr>
+      <td><strong>${label}</strong>${parent?`<br><span style="color:var(--color-text-muted)">${parent}</span>`:''}</td>
+      <td>${fmtNum(v.n)}</td>
+      <td>${fmtNum(v.refs.size)}</td>
+      <td class="td-num">${v.kg ? fmtKg(v.kg) : '—'}</td>
+      <td class="td-total">${v.rev ? fmtEur(v.rev) : '—'}</td>
+    </tr>`
+  }).join('')
+
+  document.getElementById('product-content').innerHTML = `
+    <div class="grid-2">
+      <div class="card">
+        <div class="chart-label"><span>Tipos de factura</span></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Tipo</th><th>Líneas</th><th>Refs.</th><th>KG</th><th>Base IVA</th></tr></thead><tbody>${renderMetricRows(typeRows)}</tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="chart-label"><span>Productos base</span></div>
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>Producto</th><th>Líneas</th><th>Refs.</th><th>KG</th><th>Base IVA</th></tr></thead><tbody>${renderMetricRows(productRows)}</tbody></table></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="chart-label"><span>Subproductos</span></div>
+      <div class="table-wrap"><table class="data-table"><thead><tr><th>Subproducto</th><th>Líneas</th><th>Refs.</th><th>KG</th><th>Base IVA</th></tr></thead><tbody>${renderMetricRows(subRows)}</tbody></table></div>
+    </div>
+  `
+}
+window.renderProductos = renderProductos
 
 // =========== CLIENTES PAGE ===========
 function renderClientes() {
@@ -981,12 +1154,19 @@ function renderTable() {
   const search = document.getElementById('table-search')?.value.toLowerCase() || ''
   const campaignF  = parseInt(document.getElementById('table-year-filter')?.value) || null
   const catF   = document.getElementById('table-cat-filter')?.value || ''
+  const typeF  = document.getElementById('table-type')?.value || ''
+  const baseF  = document.getElementById('table-base')?.value || ''
+  const subF   = document.getElementById('table-subproduct')?.value || ''
 
   let rows = data.filter(d => {
+    const cls = getLineClassification(d)
     let ok = true
     if (search) ok = ok && (d.product.toLowerCase().includes(search) || d.category.toLowerCase().includes(search) || (d.denominacion_social||'').toLowerCase().includes(search))
     if (campaignF) ok = ok && sameCampaign(d, campaignF)
     if (catF)  ok = ok && d.category === catF
+    if (typeF) ok = ok && cls.type === typeF
+    if (baseF) ok = ok && cls.product === baseF
+    if (subF)  ok = ok && cls.subproduct === subF
     return ok
   }).sort((a,b) => getCampaignStart(b) - getCampaignStart(a) || campaignMonthIndex(a) - campaignMonthIndex(b))
 
@@ -1003,9 +1183,10 @@ function renderTable() {
         badgeCls = pct > 0.5 ? 'badge-up' : pct < -0.5 ? 'badge-down' : 'badge-flat'
       }
       const nombre = getClientLabel(d)
+      const cls = getLineClassification(d)
       return `<tr>
         <td><strong>${d.product}</strong></td>
-        <td>${d.category}</td>
+        <td>${cls.type}<br><span style="color:var(--color-text-muted)">${cls.product} · ${cls.subproduct}</span></td>
         <td>${campaignLabel(getCampaignStart(d))}</td>
         <td>${d.month ? MONTH_NAMES[d.month-1] : '—'}</td>
         <td class="td-num">${d.price > 0 ? fmtEur(d.price) : '—'}</td>
