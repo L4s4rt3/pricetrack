@@ -3,7 +3,7 @@ import { supabase } from './supabase.js'
 const TABLE = 'precios'
 const PAGE_SIZE = 1000
 
-export async function fetchAllRecords() {
+export async function fetchAllRecords(onProgress) {
   let all = [], from = 0
   while (true) {
     const { data, error } = await supabase
@@ -15,6 +15,7 @@ export async function fetchAllRecords() {
     if (error) throw error
     if (!data?.length) break
     all = all.concat(data)
+    if (onProgress) onProgress(all.length)
     if (data.length < PAGE_SIZE) break
     from += PAGE_SIZE
   }

@@ -12,6 +12,7 @@ let ventasPageSize = 50
 let clienteSelected = null
 let toastTimer = null
 let bulkDeleting = false
+let isLoadingData = false
 const classificationCache = new Map()
 
 const MONTHS      = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
@@ -261,6 +262,24 @@ function showToast(msg, type = '', duration = 3000) {
   if (duration > 0) toastTimer = setTimeout(() => t.className = 'toast', duration)
 }
 
+function renderLoadingState(count = 0) {
+  const subtitle = document.getElementById('dashboard-subtitle')
+  if (subtitle) subtitle.textContent = count
+    ? `Cargando historico... ${fmtNum(count)} registros leidos`
+    : 'Cargando historico desde Supabase...'
+
+  const kpiGrid = document.getElementById('kpi-grid')
+  if (kpiGrid) kpiGrid.innerHTML = `
+    <div class="loading-card" style="grid-column:1/-1">
+      <div class="loading-spinner"></div>
+      <div>
+        <div class="loading-title">Cargando historico</div>
+        <div class="loading-text">${count ? `${fmtNum(count)} registros leidos` : 'Conectando con Supabase'}</div>
+      </div>
+    </div>
+  `
+}
+
 function baseChartOptions(colors, unit = '€') {
   return {
     responsive: true, maintainAspectRatio: false,
@@ -277,12 +296,15 @@ function baseChartOptions(colors, unit = '€') {
 
 // =========== INIT ===========
 async function initApp() {
+  isLoadingData = true
+  renderLoadingState()
   try {
-    data = await fetchAllRecords()
+    data = await fetchAllRecords(count => renderLoadingState(count))
   } catch(e) {
     console.error(e)
     showToast('⚠ Error al cargar datos de Supabase', 'error')
   }
+  isLoadingData = false
   populateAllSelects()
   renderDashboard()
   renderHistoryView()
@@ -418,6 +440,10 @@ window.populateAllSelects = populateAllSelects
 
 // =========== DASHBOARD ===========
 function renderDashboard() {
+  if (isLoadingData) {
+    renderLoadingState(data.length)
+    return
+  }
   const campaigns = getCampaigns()
   if (!campaigns.length) {
     document.getElementById('kpi-grid').innerHTML = '<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Sin datos</div><div class="kpi-value" style="font-size:var(--text-base)">Importa registros para comenzar</div></div>'
@@ -664,6 +690,12 @@ function getVentasFiltered() {
 }
 
 function renderVentas() {
+  if (isLoadingData && !data.length) {
+    document.getElementById('ventas-summary').innerHTML = '<span class="summary-chip">Cargando historico...</span>'
+    document.getElementById('ventas-tbody').innerHTML = '<tr><td colspan="9" class="empty-row">Cargando registros desde Supabase</td></tr>'
+    document.getElementById('ventas-count').textContent = ''
+    return
+  }
   const rows     = getVentasFiltered()
   const total    = rows.length
   const start    = ventasPage * ventasPageSize
@@ -762,6 +794,11 @@ function getProductFilteredRows() {
 }
 
 function renderProductos() {
+  if (isLoadingData && !data.length) {
+    document.getElementById('product-summary').innerHTML = '<span class="summary-chip">Cargando historico...</span>'
+    document.getElementById('product-content').innerHTML = '<div class="loading-card"><div class="loading-spinner"></div><div><div class="loading-title">Cargando productos</div><div class="loading-text">Leyendo registros desde Supabase</div></div></div>'
+    return
+  }
   const rows = getProductFilteredRows()
   const totalRev = sum(rows.map(d => d.base_iva))
   const totalKg = sum(rows.map(d => d.kilos))
@@ -1300,6 +1337,11 @@ window.renderPredictions = renderPredictions
 
 // =========== DATOS / TABLA ===========
 function renderTable() {
+  if (isLoadingData && !data.length) {
+    document.getElementById('table-body').innerHTML = '<tr><td colspan="10" class="empty-row">Cargando registros desde Supabase</td></tr>'
+    document.getElementById('table-count').textContent = 'Cargando historico...'
+    return
+  }
   const search = document.getElementById('table-search')?.value.toLowerCase() || ''
   const campaignF  = parseInt(document.getElementById('table-year-filter')?.value) || null
   const catF   = document.getElementById('table-cat-filter')?.value || ''
