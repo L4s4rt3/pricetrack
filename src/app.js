@@ -1,6 +1,7 @@
 import {
   fetchAllRecords, addRecord as dbAddRecord, addRecords as dbAddRecords,
-  deleteRecord as dbDeleteRecord, deleteAllRecords as dbDeleteAllRecords, subscribeToChanges, normalizeRow
+  updateRecords as dbUpdateRecords, deleteRecord as dbDeleteRecord,
+  deleteAllRecords as dbDeleteAllRecords, subscribeToChanges, normalizeRow
 } from './database.js'
 
 // =========== GLOBALS ===========
@@ -1844,6 +1845,61 @@ function showPreview(d) {
   document.getElementById('preview-section').style.display = 'block'
 }
 
+function normalizeImportKeyValue(value) {
+  return normalizeText(value).replace(/[^A-Z0-9]+/g, ' ').trim()
+}
+
+function getImportKey(record) {
+  const doc = normalizeImportKeyValue(record.documento || record.factura)
+  const line = String(record.lin || '').trim()
+  const ref = normalizeImportKeyValue(record.referencia)
+  const client = normalizeImportKeyValue(record.cliente)
+  const product = normalizeImportKeyValue(record.product)
+  const date = `${record.year || ''}-${String(record.month || '').padStart(2, '0')}`
+
+  if (doc && line) return `doc-line|${doc}|${line}`
+  if (doc && ref && client) return `doc-ref-client|${doc}|${ref}|${client}`
+  if (doc && product && client) return `doc-product-client|${doc}|${product}|${client}`
+  if (date && client && ref && product && line) return `date-client-ref-product-line|${date}|${client}|${ref}|${product}|${line}`
+
+  return [
+    'exact',
+    date,
+    client,
+    ref,
+    product,
+    line,
+    Number(record.kilos || 0).toFixed(3),
+    Number(record.unidades || 0).toFixed(3),
+    Number(record.base_iva || 0).toFixed(2),
+    Number(record.price || 0).toFixed(4)
+  ].join('|')
+}
+
+function sameImportValue(a, b, decimals = 4) {
+  const na = Number(a || 0)
+  const nb = Number(b || 0)
+  if (!Number.isFinite(na) || !Number.isFinite(nb)) return String(a || '') === String(b || '')
+  return Math.abs(na - nb) < Math.pow(10, -decimals)
+}
+
+function recordsAreSameForImport(a, b) {
+  return [
+    'product','category','unit','notes','cliente','denominacion_social','referencia',
+    'documento','factura','fecha_fra'
+  ].every(field => String(a[field] || '').trim() === String(b[field] || '').trim())
+    && sameImportValue(a.price, b.price)
+    && sameImportValue(a.year, b.year, 0)
+    && sameImportValue(a.month, b.month, 0)
+    && sameImportValue(a.kilos, b.kilos, 3)
+    && sameImportValue(a.unidades, b.unidades, 3)
+    && sameImportValue(a.litros, b.litros, 3)
+    && sameImportValue(a.tarifa, b.tarifa, 4)
+    && sameImportValue(a.coste_adic, b.coste_adic, 4)
+    && sameImportValue(a.base_iva, b.base_iva, 2)
+    && sameImportValue(a.lin, b.lin, 0)
+}
+
 async function executeImport() {
   if (!importData?.rows?.length) { showToast('⚠ No hay datos para importar','error'); return }
   const { headers, rows } = importData
@@ -1897,15 +1953,64 @@ async function executeImport() {
   progressEl.style.display = 'block'
 
   try {
-    const saved = await dbAddRecords(records, (done, total) => {
-      const pct = Math.round((done/total)*100)
-      progressBar.style.width = pct + '%'
-      progressTxt.textContent = `Importando… ${done.toLocaleString('es-ES')}/${total.toLocaleString('es-ES')} (${pct}%)`
+    const existingByKey = new Map()
+    data.forEach(row => existingByKey.set(getImportKey(row), row))
+
+    const insertByKey = new Map()
+    const updateById = new Map()
+    let skipped = 0
+
+    records.forEach(record => {
+      const key = getImportKey(record)
+      const pendingInsert = insertByKey.get(key)
+      if (pendingInsert) {
+        if (recordsAreSameForImport(pendingInsert, record)) skipped += 1
+        else insertByKey.set(key, record)
+        return
+      }
+
+      const existing = existingByKey.get(key)
+      if (!existing) {
+        insertByKey.set(key, record)
+        return
+      }
+
+      if (recordsAreSameForImport(existing, record)) {
+        skipped += 1
+        return
+      }
+
+      updateById.set(existing.id, { ...record, id: existing.id, created_at: existing.created_at })
+      existingByKey.set(key, { ...existing, ...record })
     })
+
+    const toInsert = [...insertByKey.values()]
+    const toUpdate = [...updateById.values()]
+    const totalWork = toInsert.length + toUpdate.length
+    let doneWork = 0
+    const setProgress = (label, done, total) => {
+      const pct = totalWork ? Math.round(((doneWork + done) / totalWork) * 100) : 100
+      progressBar.style.width = pct + '%'
+      progressTxt.textContent = label + ' ' + done.toLocaleString('es-ES') + '/' + total.toLocaleString('es-ES') + ' (' + pct + '%)'
+    }
+
+    const updated = toUpdate.length
+      ? await dbUpdateRecords(toUpdate, (done, total) => setProgress('Actualizando...', done, total))
+      : []
+    doneWork += toUpdate.length
+
+    const saved = toInsert.length
+      ? await dbAddRecords(toInsert, (done, total) => setProgress('Importando...', done, total))
+      : []
+
+    if (updated.length) {
+      const updatedById = new Map(updated.map(row => [row.id, row]))
+      data = data.map(row => updatedById.get(row.id) || row)
+    }
     data = data.concat(saved)
     closeModal('import-modal')
     populateAllSelects()
-    showToast(`✓ ${saved.length.toLocaleString('es-ES')} registros importados`)
+    showToast('✓ ' + saved.length.toLocaleString('es-ES') + ' añadidos · ' + updated.length.toLocaleString('es-ES') + ' actualizados · ' + skipped.toLocaleString('es-ES') + ' duplicados ignorados', '', 6000)
     rerenderCurrentPage()
   } catch(e) {
     console.error(e)

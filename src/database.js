@@ -95,6 +95,27 @@ export async function addRecords(records, onProgress) {
   return all
 }
 
+export async function updateRecords(records, onProgress) {
+  const CHUNK = 200
+  let all = []
+  for (let i = 0; i < records.length; i += CHUNK) {
+    const chunk = records.slice(i, i + CHUNK)
+    const updated = await Promise.all(chunk.map(async record => {
+      const { data, error } = await supabase
+        .from(TABLE)
+        .update(toDb(record))
+        .eq('id', record.id)
+        .select()
+        .single()
+      if (error) throw error
+      return data ? normalizeRow(data) : null
+    }))
+    all = all.concat(updated.filter(Boolean))
+    if (onProgress) onProgress(Math.min(i + CHUNK, records.length), records.length)
+  }
+  return all
+}
+
 export async function deleteRecord(id) {
   const { error } = await supabase.from(TABLE).delete().eq('id', id)
   if (error) throw error
