@@ -1238,35 +1238,150 @@ function renderCompare() {
 window.renderCompare = renderCompare
 
 // =========== PREDICCIONES ===========
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n))
+}
+
+function median(values) {
+  const sorted = values.filter(Number.isFinite).sort((a,b)=>a-b)
+  if (!sorted.length) return 0
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+function percentile(values, p) {
+  const sorted = values.filter(Number.isFinite).sort((a,b)=>a-b)
+  if (!sorted.length) return 0
+  const pos = (sorted.length - 1) * p
+  const base = Math.floor(pos)
+  const rest = pos - base
+  return sorted[base + 1] !== undefined ? sorted[base] + rest * (sorted[base + 1] - sorted[base]) : sorted[base]
+}
+
+function weightedAvg(items) {
+  const totalW = sum(items.map(x => x.weight || 1))
+  return totalW ? sum(items.map(x => x.value * (x.weight || 1))) / totalW : 0
+}
+
+function getEffectiveUnitPrice(d) {
+  const byKg = d.base_iva > 0 && d.kilos > 0 ? d.base_iva / d.kilos : 0
+  if (byKg > 0 && byKg < 25) return byKg
+  return d.price > 0 && d.price < 25 ? d.price : 0
+}
+
+function monthKey(d) {
+  return d.year * 12 + (d.month || 1) - 1
+}
+
+function monthFromKey(key) {
+  return { year: Math.floor(key / 12), month: (key % 12) + 1 }
+}
+
+function linearRegression(points) {
+  const totalW = sum(points.map(p => p.weight || 1))
+  if (!totalW || points.length < 2) return { slope: 0, intercept: Math.log(points.at(-1)?.price || 1) }
+  const xMean = sum(points.map(p => p.x * (p.weight || 1))) / totalW
+  const yMean = sum(points.map(p => Math.log(p.price) * (p.weight || 1))) / totalW
+  const den = sum(points.map(p => (p.weight || 1) * Math.pow(p.x - xMean, 2)))
+  if (!den) return { slope: 0, intercept: yMean }
+  const num = sum(points.map(p => (p.weight || 1) * (p.x - xMean) * (Math.log(p.price) - yMean)))
+  const slope = clamp(num / den, -0.018, 0.018)
+  return { slope, intercept: yMean - slope * xMean }
+}
+
+function aggregatePredictionSeries(product) {
+  const source = (product ? data.filter(d=>d.product===product) : data)
+    .filter(d => d.month && getLineClassification(d).type === 'Producto')
+    .map(d => ({ ...d, effectivePrice: getEffectiveUnitPrice(d) }))
+    .filter(d => d.effectivePrice > 0)
+
+  if (source.length < 12) return null
+  const prices = source.map(d => d.effectivePrice)
+  const low = percentile(prices, 0.03)
+  const high = percentile(prices, 0.97)
+  const clean = source.filter(d => d.effectivePrice >= low && d.effectivePrice <= high)
+  if (clean.length < 12) return null
+
+  const groups = new Map()
+  clean.forEach(d => {
+    const key = monthKey(d)
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push({ value: d.effectivePrice, weight: d.kilos > 0 ? d.kilos : 1, kilos: d.kilos || 0 })
+  })
+
+  const monthly = [...groups.entries()].map(([key, rows]) => {
+    const m = monthFromKey(key)
+    return {
+      key,
+      year: m.year,
+      month: m.month,
+      price: weightedAvg(rows),
+      kilos: sum(rows.map(r => r.kilos || 0)),
+      records: rows.length
+    }
+  }).filter(p => p.price > 0).sort((a,b)=>a.key-b.key)
+
+  return monthly.length >= 12 ? { monthly, clean } : null
+}
+
 function computePrediction(product) {
-  const filtered = product ? data.filter(d=>d.product===product) : data
-  if (filtered.length < 6) return null
-  const years = [...new Set(filtered.map(d=>d.year))].sort((a,b)=>a-b)
-  if (years.length < 2) return null
-  const yearAvgs = years.map(y => ({ year:y, avg: avg(filtered.filter(d=>d.year===y&&d.price>0).map(d=>d.price)) }))
-  const growth   = []
-  for (let i=1; i<yearAvgs.length; i++) {
-    if (yearAvgs[i-1].avg>0) growth.push((yearAvgs[i].avg-yearAvgs[i-1].avg)/yearAvgs[i-1].avg)
+  const series = aggregatePredictionSeries(product)
+  if (!series) return null
+
+  const { monthly, clean } = series
+  const last = monthly.at(-1)
+  const recent = monthly.slice(-36)
+  const regressionPoints = recent.map((p, i) => ({ x: i, price: p.price, weight: Math.max(1, Math.log10((p.kilos || 0) + 10)) }))
+  const reg = linearRegression(regressionPoints)
+  const recentOverall = weightedAvg(recent.map(p => ({ value: p.price, weight: p.kilos > 0 ? p.kilos : 1 })))
+  const monthFactors = {}
+
+  for (let m = 1; m <= 12; m++) {
+    const vals = monthly.filter(p => p.month === m).map(p => p.price)
+    monthFactors[m] = recentOverall > 0 && vals.length >= 2 ? clamp(median(vals) / recentOverall, 0.82, 1.18) : 1
   }
-  const avgGrowth  = growth.length ? sum(growth)/growth.length : 0
-  const months     = [...new Set(filtered.filter(d=>d.month).map(d=>d.month))].sort((a,b)=>a-b)
-  const mFactors   = {}
-  const overall    = avg(filtered.filter(d=>d.price>0).map(d=>d.price))
-  for (const m of months) {
-    const mv = avg(filtered.filter(d=>d.month===m && d.price>0).map(d=>d.price))
-    mFactors[m] = overall>0 ? mv/overall : 1
+
+  const lastSix = monthly.slice(-6)
+  const currentPrice = weightedAvg(lastSix.map((p, i) => ({ value: p.price, weight: i + 1 }))) || last.price
+  const lastSeason = monthFactors[last.month] || 1
+  const volatility = median(recent.slice(1).map((p, i) => Math.abs((p.price - recent[i].price) / recent[i].price)).filter(Number.isFinite))
+  const uncertainty = clamp(volatility || 0.06, 0.04, 0.18)
+  const preds = []
+
+  for (let i = 1; i <= 12; i++) {
+    const key = last.key + i
+    const date = monthFromKey(key)
+    const trendPrice = Math.exp(reg.intercept + reg.slope * (regressionPoints.length - 1 + i))
+    const season = monthFactors[date.month] || 1
+    const adjusted = trendPrice * (season / lastSeason)
+    const blend = clamp(i / 12, 0.2, 0.75)
+    const price = currentPrice * (1 - blend) + adjusted * blend
+    const rounded = Math.round(price * 1000) / 1000
+    preds.push({
+      year: date.year,
+      month: date.month,
+      price: rounded,
+      low: Math.round(rounded * (1 - uncertainty) * 1000) / 1000,
+      high: Math.round(rounded * (1 + uncertainty) * 1000) / 1000
+    })
   }
-  const lastYear    = Math.max(...years)
-  const lastYearAvg = yearAvgs.find(y=>y.year===lastYear)?.avg || 0
-  const preds       = []
-  let lm = Math.max(...(months.length ? months : [12]))
-  let py = lastYear
-  for (let i=0; i<12; i++) {
-    lm++; if (lm>12) { lm=1; py++ }
-    const pred = lastYearAvg * (1 + avgGrowth*(py-lastYear)) * (mFactors[lm]||1)
-    preds.push({ year:py, month:lm, price: Math.round(pred*1000)/1000 })
+
+  const startPrice = recent[0]?.price || currentPrice
+  const trendAnnual = startPrice > 0 ? Math.pow(last.price / startPrice, 12 / Math.max(1, recent.length - 1)) - 1 : 0
+  const totalKg = sum(clean.map(d => d.kilos || 0))
+  const confidence = recent.length >= 30 && totalKg > 0 ? 'Alta' : recent.length >= 18 ? 'Media' : 'Baja'
+
+  return {
+    preds,
+    actual: monthly.slice(-36),
+    avgGrowth: clamp(trendAnnual, -0.35, 0.35),
+    lastYearAvg: currentPrice,
+    lastYear: last.year,
+    lastMonth: last.month,
+    totalKg,
+    confidence,
+    records: clean.length
   }
-  return { preds, avgGrowth, lastYearAvg, lastYear }
 }
 
 function renderPredictions() {
@@ -1275,18 +1390,15 @@ function renderPredictions() {
   const colors     = getChartColors()
 
   if (!result) {
-    document.getElementById('pred-kpis').innerHTML = `<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Sin datos suficientes</div><div class="kpi-value" style="font-size:var(--text-base)">Necesitas al menos 2 años de datos para generar predicciones</div></div>`
+    document.getElementById('pred-kpis').innerHTML = `<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Sin datos suficientes</div><div class="kpi-value" style="font-size:var(--text-base)">Necesitas al menos 12 meses con precio efectivo para generar predicciones realistas</div></div>`
     destroyChart('predChart')
     document.getElementById('pred-table').innerHTML = ''
     return
   }
 
-  const { preds, avgGrowth, lastYearAvg, lastYear } = result
-  const filtered = selProduct ? data.filter(d=>d.product===selProduct) : data
-  const sorted   = [...filtered].filter(d=>d.month&&d.price>0).sort((a,b)=>(a.year-b.year)||(a.month-b.month))
-  const recent   = sorted.filter(d=>d.year>=lastYear-2)
+  const { preds, actual, avgGrowth, lastYearAvg, lastYear, lastMonth, totalKg, confidence, records } = result
   const allLabels=[]; const allActual=[]; const allPred=[]; const seen=new Set()
-  for (const d of recent) {
+  for (const d of actual) {
     const k=`${d.year}-${String(d.month).padStart(2,'0')}`
     if (!seen.has(k)) { seen.add(k); allLabels.push(`${MONTHS[d.month-1]} ${d.year}`); allActual.push(d.price); allPred.push(null) }
   }
@@ -1302,11 +1414,11 @@ function renderPredictions() {
     data: {
       labels: allLabels,
       datasets: [
-        { label:'Real', data:allActual, borderColor:'#01696f', backgroundColor:'rgba(1,105,111,0.08)', borderWidth:2, pointRadius:3, tension:0.3, fill:true, spanGaps:false },
-        { label:'Predicción', data:allPred, borderColor:'#da7101', backgroundColor:'rgba(218,113,1,0.06)', borderWidth:2, borderDash:[6,3], pointRadius:3, tension:0.3, fill:true, spanGaps:true }
+        { label:'Real ponderado', data:allActual, borderColor:'#01696f', backgroundColor:'rgba(1,105,111,0.08)', borderWidth:2, pointRadius:3, tension:0.3, fill:true, spanGaps:false },
+        { label:'Prediccion', data:allPred, borderColor:'#da7101', backgroundColor:'rgba(218,113,1,0.06)', borderWidth:2, borderDash:[6,3], pointRadius:3, tension:0.3, fill:true, spanGaps:true }
       ]
     },
-    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:true, labels:{ color:colors.tick, font:{size:12} } }, tooltip:{ callbacks:{ label: c=>`${c.dataset.label}: ${fmtEur(c.raw)}` } } }, scales:{ x:{ grid:{color:colors.grid}, ticks:{color:colors.tick,font:{size:10}} }, y:{ grid:{color:colors.grid}, ticks:{color:colors.tick,font:{size:11}, callback:v=>`${v} €`} } } }
+    options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:true, labels:{ color:colors.tick, font:{size:12} } }, tooltip:{ callbacks:{ label: c=>`${c.dataset.label}: ${fmtEur(c.raw)}/kg` } } }, scales:{ x:{ grid:{color:colors.grid}, ticks:{color:colors.tick,font:{size:10}} }, y:{ grid:{color:colors.grid}, ticks:{color:colors.tick,font:{size:11}, callback:v=>`${v} €/kg`} } } }
   })
 
   const mid = preds[Math.min(5,preds.length-1)]
@@ -1315,10 +1427,10 @@ function renderPredictions() {
   const ch12= preds[0]&&last ? ((last.price-preds[0].price)/preds[0].price)*100 : 0
 
   document.getElementById('pred-kpis').innerHTML = `
-    <div class="kpi-card"><div class="kpi-label">Precio actual (${lastYear})</div><div class="kpi-value">${fmtEur(lastYearAvg)}/kg</div></div>
-    <div class="kpi-card"><div class="kpi-label">Tendencia anual</div><div class="kpi-value">${fmtPct(avgGrowth*100)}</div><div class="kpi-delta ${avgGrowth>=0?'delta-up':'delta-down'}">${avgGrowth>=0?'▲':'▼'} Proyección</div></div>
+    <div class="kpi-card"><div class="kpi-label">Precio efectivo actual (${MONTHS[lastMonth-1]} ${lastYear})</div><div class="kpi-value">${fmtEur(lastYearAvg)}/kg</div><div class="kpi-delta delta-flat">Base IVA / kg ponderado</div></div>
+    <div class="kpi-card"><div class="kpi-label">Tendencia anual ajustada</div><div class="kpi-value">${fmtPct(avgGrowth*100)}</div><div class="kpi-delta ${avgGrowth>=0?'delta-up':'delta-down'}">${confidence} confianza · ${fmtNum(records)} lineas</div></div>
     <div class="kpi-card"><div class="kpi-label">Estimado 6 meses</div><div class="kpi-value">${fmtEur(mid?.price||0)}/kg</div><div class="kpi-delta ${ch6>=0?'delta-up':'delta-down'}">${fmtPct(ch6)}</div></div>
-    <div class="kpi-card"><div class="kpi-label">Estimado 12 meses</div><div class="kpi-value">${fmtEur(last?.price||0)}/kg</div><div class="kpi-delta ${ch12>=0?'delta-up':'delta-down'}">${fmtPct(ch12)}</div></div>
+    <div class="kpi-card"><div class="kpi-label">Estimado 12 meses</div><div class="kpi-value">${fmtEur(last?.price||0)}/kg</div><div class="kpi-delta ${ch12>=0?'delta-up':'delta-down'}">${totalKg ? fmtKg(totalKg) + ' analizados' : fmtPct(ch12)}</div></div>
   `
 
   let prevP = null
@@ -1328,10 +1440,11 @@ function renderPredictions() {
     return `<tr>
       <td><strong>${MONTH_NAMES[p.month-1]} ${p.year}</strong></td>
       <td style="color:var(--color-orange);font-weight:600">${fmtEur(p.price)}/kg</td>
+      <td>${fmtEur(p.low)} - ${fmtEur(p.high)}/kg</td>
       <td>${vsPrev!==null?`<span class="badge ${vsPrev>=0?'badge-up':'badge-down'}">${fmtPct(vsPrev)}</span>`:'—'}</td>
     </tr>`
   }).join('')
-  document.getElementById('pred-table').innerHTML = `<thead><tr><th>Mes</th><th>Precio estimado</th><th>Vs. mes anterior</th></tr></thead><tbody>${rows}</tbody>`
+  document.getElementById('pred-table').innerHTML = `<thead><tr><th>Mes</th><th>Precio estimado</th><th>Rango realista</th><th>Vs. mes anterior</th></tr></thead><tbody>${rows}</tbody>`
 }
 window.renderPredictions = renderPredictions
 
@@ -1566,7 +1679,7 @@ const COLUMN_AUTO_MAP = {
   categoria:           ['categoria','categoría','category','familia','tipo','departamento'],
   precio:              ['pvp','precio','price','precio unitario'],
   unidad:              ['unidad','unit','um','medida'],
-  año:                 ['año','ano','year','ejercicio','fecha','fecha albarán'],
+  ano:                 ['año','ano','year','ejercicio','fecha','fecha albarán'],
   mes:                 ['mes','month','fecha'],
   notas:               ['notas','notes','observaciones','comentarios','matrícula','matricula'],
   cliente:             ['cliente','client','cod. cliente','código cliente','codigo cliente'],
@@ -1703,12 +1816,12 @@ function buildMapping(headers) {
     })
     map[field] = idx >= 0 ? idx : null
   }
-  if (map.año === null || map.mes === null) {
+  if (map.ano === null || map.mes === null) {
     const dateIdx = headers.findIndex(h => {
       const hl = normalizeHeaderName(h)
       return ['fecha','date','fecha albaran','fecha tra'].some(s=>hl===s||hl.startsWith(s))
     })
-    if (dateIdx >= 0) { if(map.año===null) map.año=dateIdx; if(map.mes===null) map.mes=dateIdx }
+    if (dateIdx >= 0) { if(map.ano===null) map.ano=dateIdx; if(map.mes===null) map.mes=dateIdx }
   }
   return map
 }
@@ -1748,7 +1861,7 @@ async function executeImport() {
   for (const row of rows) {
     const product = get(row,'producto')
     if (!product) continue
-    const year = extractYear(get(row,'año'))
+    const year = extractYear(get(row,'ano'))
     if (isNaN(year)) continue
     const price   = parseNumber(get(row,'precio'))
     const base_iva= parseNumber(get(row,'base_iva')) || 0
