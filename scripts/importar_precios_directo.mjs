@@ -141,9 +141,36 @@ function readDelimited(file) {
 }
 
 function readWorkbook(file) {
-  const wb = XLSX.readFile(file)
+  const bytes = readFileSync(file)
+  const repaired = hasPk00Prefix(bytes)
+    ? repairPk00Zip(bytes)
+    : bytes
+  const wb = XLSX.read(repaired, { type: 'buffer' })
   const ws = wb.Sheets[wb.SheetNames[0]]
   return XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+}
+
+function hasPk00Prefix(bytes) {
+  return bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x30 && bytes[3] === 0x30 && bytes[4] === 0x50 && bytes[5] === 0x4B
+}
+
+function repairPk00Zip(bytes) {
+  const out = Buffer.from(bytes.subarray(4))
+  for (let i = 0; i < out.length - 46; i += 1) {
+    if (out[i] === 0x50 && out[i + 1] === 0x4B && out[i + 2] === 0x01 && out[i + 3] === 0x02) {
+      const offset = out.readUInt32LE(i + 42)
+      if (offset >= 4) out.writeUInt32LE(offset - 4, i + 42)
+      i += 45
+    }
+  }
+  for (let i = out.length - 22; i >= 0 && i > out.length - 65580; i -= 1) {
+    if (out[i] === 0x50 && out[i + 1] === 0x4B && out[i + 2] === 0x05 && out[i + 3] === 0x06) {
+      const offset = out.readUInt32LE(i + 16)
+      if (offset >= 4) out.writeUInt32LE(offset - 4, i + 16)
+      break
+    }
+  }
+  return out
 }
 
 function tableFromFile(file) {
@@ -155,8 +182,10 @@ function tableFromFile(file) {
 }
 
 function toRecord(row, map) {
-  const product = cleanText(getCell(row, map, 'producto') || getCell(row, map, 'referencia') || getCell(row, map, 'documento'))
+  if (map.precio < 0 && map.base_iva < 0 && map.referencia < 0) return null
+  const product = cleanText(getCell(row, map, 'producto') || getCell(row, map, 'referencia'))
   if (!product) return null
+  if (!cleanText(getCell(row, map, 'documento')) && !cleanText(getCell(row, map, 'fecha')) && !cleanText(getCell(row, map, 'fecha_fra'))) return null
   const baseIva = parseNumber(getCell(row, map, 'base_iva'))
   const kilos = parseNumber(getCell(row, map, 'kilos'))
   let price = parseNumber(getCell(row, map, 'precio'))
