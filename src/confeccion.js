@@ -19,7 +19,7 @@ function fmt(n) {
 }
 
 function fmtEur(n) {
-  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2 }).format(n)
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', minimumFractionDigits: 3 }).format(n)
 }
 
 async function fetchConfeccion() {
@@ -42,6 +42,7 @@ async function fetchConfeccion() {
 function getFiltered() {
   const q = (document.getElementById('conf-search')?.value || '').toLowerCase()
   const cliente = document.getElementById('conf-cliente')?.value || ''
+  const tipo = document.getElementById('conf-tipo')?.value || ''
   const prodBase = document.getElementById('conf-producto-base')?.value || ''
   const variedad = document.getElementById('conf-variedad')?.value || ''
   const calibre = document.getElementById('conf-calibre')?.value || ''
@@ -55,11 +56,12 @@ function getFiltered() {
       const searchable = [
         d.cliente_nombre, d.producto_confeccionado, d.producto_base,
         d.variedad, d.calibre, d.lote, d.tipo_caja, String(d.nº_palet || ''),
-        d.documento_limpio, d.denominacion_social, d.referencia
+        d.documento_limpio, d.denominacion_social, d.referencia, d.tipo
       ].filter(Boolean).join(' ').toLowerCase()
       if (!searchable.includes(q)) return false
     }
     if (cliente && d.cliente_nombre !== cliente) return false
+    if (tipo && d.tipo !== tipo) return false
     if (prodBase && d.producto_base !== prodBase) return false
     if (variedad && d.variedad !== variedad) return false
     if (calibre && d.calibre !== calibre) return false
@@ -79,6 +81,7 @@ function populateSelects() {
     el.innerHTML = `<option value="">${allLabel}</option>` + items.map(i => `<option value="${i}">${i}</option>`).join('')
   }
   setOpts('conf-cliente', uniq('cliente_nombre'), 'Todos los clientes')
+  setOpts('conf-tipo', uniq('tipo'), 'Todos los tipos')
   setOpts('conf-producto-base', uniq('producto_base'), 'Todos los productos')
   setOpts('conf-variedad', uniq('variedad'), 'Todas las variedades')
   setOpts('conf-calibre', uniq('calibre'), 'Todos los calibres')
@@ -88,15 +91,18 @@ function populateSelects() {
 
 async function initConfeccion() {
   const tbody = document.getElementById('conf-tbody')
-  if (tbody) tbody.innerHTML = '<tr><td colspan="12" class="empty-row">Cargando datos de confección...</td></tr>'
+  if (tbody) tbody.innerHTML = '<tr><td colspan="14" class="empty-row">Cargando datos de confección...</td></tr>'
   try {
     data = await fetchConfeccion()
   } catch (e) {
     console.error(e)
-    if (tbody) tbody.innerHTML = `<tr><td colspan="12" class="empty-row" style="color:var(--color-error)">Error al cargar: ${e.message}</td></tr>`
+    if (tbody) tbody.innerHTML = `<tr><td colspan="14" class="empty-row" style="color:var(--color-error)">Error al cargar: ${e.message}</td></tr>`
     return
   }
   populateSelects()
+  // Default: solo Producto
+  const tipoSel = document.getElementById('conf-tipo')
+  if (tipoSel && tipoSel.querySelector('option[value="Producto"]')) tipoSel.value = 'Producto'
   renderConfeccion()
 }
 
@@ -119,21 +125,33 @@ function renderConfeccion() {
   const total = rows.length
   const start = confPage * PAGE_SIZE
   const pageRows = rows.slice(start, start + PAGE_SIZE)
+  const soloProd = document.getElementById('conf-tipo')?.value === 'Producto'
 
   const totCajas = pageRows.reduce((s, d) => s + (d.cajas || 0), 0)
   const totKgNetos = pageRows.reduce((s, d) => s + parseFloat(d.kg_netos || 0), 0)
   const totKgFact = pageRows.reduce((s, d) => s + parseFloat(d.kg_facturados || 0), 0)
+  const totPvp = pageRows.reduce((s, d) => s + parseFloat(d.pvp || 0), 0)
+  const totBaseIva = pageRows.reduce((s, d) => s + parseFloat(d.base_iva || 0), 0)
+  const avgPvpKg = soloProd ? rows.reduce((s, d) => {
+    const pk = parseFloat(d.pvp_kg || 0)
+    return pk > 0 ? s + pk : s
+  }, 0) / Math.max(1, rows.filter(d => parseFloat(d.pvp_kg || 0) > 0).length) : 0
 
-  document.getElementById('conf-summary').innerHTML = `
-    <span class="summary-chip">${fmtNum(total)} palets</span>
-    <span class="summary-chip chip-blue">${fmtNum(totCajas)} cajas</span>
-    <span class="summary-chip chip-gold">${fmtKg(totKgNetos)} netos</span>
-    <span class="summary-chip">${fmtKg(totKgFact)} facturados</span>
-  `
+  const chips = [
+    `<span class="summary-chip">${fmtNum(total)} palets</span>`,
+    `<span class="summary-chip chip-blue">${fmtNum(totCajas)} cajas</span>`,
+    `<span class="summary-chip chip-gold">${fmtKg(totKgNetos)} netos</span>`,
+    `<span class="summary-chip">${fmtKg(totKgFact)} facturados</span>`,
+  ]
+  if (avgPvpKg > 0) chips.push(`<span class="summary-chip" style="background:var(--color-primary-light);color:var(--color-primary)">Ø ${fmtEur(avgPvpKg)}/kg</span>`)
+  if (totPvp > 0) chips.push(`<span class="summary-chip">${fmtEur(totPvp)} PVP</span>`)
+  if (totBaseIva > 0) chips.push(`<span class="summary-chip chip-gold">${fmtEur(totBaseIva)} base IVA</span>`)
+
+  document.getElementById('conf-summary').innerHTML = chips.join('')
 
   const tbody = document.getElementById('conf-tbody')
   if (!pageRows.length) {
-    tbody.innerHTML = '<tr><td colspan="12" class="empty-row">Sin resultados para los filtros aplicados</td></tr>'
+    tbody.innerHTML = '<tr><td colspan="14" class="empty-row">Sin resultados para los filtros aplicados</td></tr>'
   } else {
     const selected = data.find(d => d.id === selectedId)
     tbody.innerHTML = pageRows.map(d => {
@@ -141,13 +159,17 @@ function renderConfeccion() {
       const hasCalibre = d.calibre && d.calibre !== 'CAL'
       const prodBase = d.producto_base || ''
       const variedad = d.variedad || ''
+      const pvp = parseFloat(d.pvp || 0)
+      const pvpKg = parseFloat(d.pvp_kg || 0)
+      const baseIva = parseFloat(d.base_iva || 0)
       const detail = isSelected ? `
         <tr class="detail-row" id="detail-${d.id}">
-          <td colspan="12" style="padding:0;background:var(--color-surface-offset)">
+          <td colspan="14" style="padding:0;background:var(--color-surface-offset)">
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--space-2);padding:var(--space-4);font-size:var(--text-xs)">
               <div>
                 <strong style="display:block;margin-bottom:var(--space-2);color:var(--color-primary)">Palet</strong>
                 <div>Tipo: ${d.tipo_palet || '—'}</div>
+                <div>Tipo registro: ${d.tipo || '—'}</div>
                 <div>Fecha conf.: ${formatDate(d.fecha_confeccion)}</div>
                 <div>Lote: ${d.lote || '—'}</div>
                 <div>Situación: ${d.situacion || '—'}</div>
@@ -167,9 +189,10 @@ function renderConfeccion() {
                 <div>Kilos venta: ${d.kilos_venta ? fmtKg(d.kilos_venta) : '—'}</div>
                 <div>Unidades: ${d.unidades || '—'}</div>
                 <div>Litros: ${d.litros || '—'}</div>
-                <div>PVP: ${d.pvp ? fmtEur(d.pvp) : '—'}</div>
+                <div>PVP/kg: ${pvpKg > 0 ? fmtEur(pvpKg) : '—'}</div>
+                <div>PVP: ${pvp > 0 ? fmtEur(pvp) : '—'}</div>
                 <div>Tarifa: ${d.tarifa ? fmtEur(d.tarifa) : '—'}</div>
-                <div>Base IVA: ${d.base_iva ? fmtEur(d.base_iva) : '—'}</div>
+                <div>Base IVA: ${baseIva > 0 ? fmtEur(baseIva) : '—'}</div>
                 <div>Coste adic.: ${d.coste_adic ? fmtEur(d.coste_adic) : '—'}</div>
               </div>
             </div>
@@ -185,6 +208,8 @@ function renderConfeccion() {
           <td>${d.tipo_caja || '—'}</td>
           <td class="td-num">${d.kg_netos ? fmt(parseFloat(d.kg_netos)) + ' kg' : '—'}</td>
           <td class="td-num">${d.kg_facturados ? fmt(parseFloat(d.kg_facturados)) + ' kg' : '—'}</td>
+          <td class="td-num" style="font-weight:${pvpKg > 0 ? 600 : 400};color:${pvpKg > 0 ? 'var(--color-primary)' : ''}">${pvpKg > 0 ? fmtEur(pvpKg) : '—'}</td>
+          <td class="td-total">${pvp > 0 ? fmtEur(pvp) : '—'}</td>
           <td class="td-client" title="${d.cliente_nombre || ''}">${d.cliente_nombre || '—'}</td>
           <td class="td-doc" title="${d.documento_venta_original || ''}">${d.documento_limpio || d.documento_venta_original || '—'}</td>
           <td class="td-ref">${d.lote || '—'}</td>

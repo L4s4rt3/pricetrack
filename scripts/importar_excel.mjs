@@ -32,6 +32,20 @@ const VARIEDADES_CONOCIDAS = [
 
 const BASES_CONOCIDAS = new Set(['NAR', 'LIM', 'LIMON', 'MAND', 'POMELO'])
 
+function clasificarTipo(text) {
+  if (!text) return 'Otros'
+  const t = text.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (/FIANZA|EUROPOOL MOD|PLASTICO IFCO/.test(t)) return 'Fianza'
+  if (/TRANSP|PORTE|PORTES/.test(t)) return 'Transporte'
+  if (/COMISI/.test(t)) return 'Comisión'
+  if (/SERVICIO|MANIPUL|TRIAGE|CONFECCION|CONFECC/.test(t)) return 'Servicio'
+  if (/CAJA CARTON|EUROPALET|PALET FRUTERO|CAJON CAMPO|PALLET|PALET/.test(t)) return 'Envase'
+  if (/ABONO|DTO|DESCUENTO|DIFERENCIA|DIFERFENCIA|DEVOLUCION|\bDEV\b/.test(t)) return 'Abono'
+  if (/^NAR\b|^LIM\b|^MAND\b|^POMELO\b/.test(t)) return 'Producto'
+  if (/NAVEL|VALENCIA|SALUSTIANA|LANE|BARBERINA|ORRI|CLEMENTINA/.test(t)) return 'Producto'
+  return 'Producto'
+}
+
 function escaparRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -140,11 +154,17 @@ async function importar() {
     const venta = ventaMatch?.[0] || {}
     const parsed = parsearArticulo(p['Denominación Producto'] || '')
 
+    const productoArt = p['Denominación Producto'] || ''
+    const tipo = clasificarTipo(productoArt)
+    const pvp = venta.pvp || 0
+    const kilosVenta = venta.kilos_venta || 0
+    const pvpKg = (tipo === 'Producto' && pvp > 0 && kilosVenta > 0) ? pvp / kilosVenta : 0
+
     registros.push({
       tipo_palet: p.TipoPalet || '',
       nº_palet: parseInt(p['NºPalet']) || null,
       fecha_confeccion: convertirFecha(p.Fecha),
-      producto_confeccionado: p['Denominación Producto'] || '',
+      producto_confeccionado: productoArt,
       lote: p.Lote || '',
       documento_venta_original: docOriginal,
       documento_limpio: docLimpio,
@@ -164,16 +184,18 @@ async function importar() {
       linea: venta.linea || null,
       referencia: venta.referencia || '',
       articulo_venta: venta.articulo_venta || '',
-      kilos_venta: venta.kilos_venta || 0,
+      kilos_venta: kilosVenta,
       unidades: venta.unidades || 0,
       litros: venta.litros || 0,
       tarifa: venta.tarifa || 0,
-      pvp: venta.pvp || 0,
+      pvp: pvp,
       coste_adic: venta.coste_adic || 0,
       base_iva: venta.base_iva || 0,
       producto_base: parsed.producto_base,
       variedad: parsed.variedad,
       calibre: parsed.calibre,
+      tipo: tipo,
+      pvp_kg: pvpKg,
     })
 
     if (docLimpio) conDoc++; else sinDoc++

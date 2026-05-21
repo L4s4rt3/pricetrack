@@ -565,6 +565,7 @@ table { border-collapse: collapse; width: 100%; }
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input type="text" class="form-input" id="conf-search" placeholder="Buscar cliente, producto, lote…" oninput="confPage=0;renderConfeccion()">
         </div>
+        <select class="form-select" id="conf-tipo" onchange="confPage=0;renderConfeccion()" style="min-width:130px"></select>
         <select class="form-select" id="conf-cliente" onchange="confPage=0;renderConfeccion()" style="min-width:180px"></select>
         <select class="form-select" id="conf-producto-base" onchange="confPage=0;renderConfeccion()" style="min-width:150px"></select>
         <select class="form-select" id="conf-variedad" onchange="confPage=0;renderConfeccion()" style="min-width:150px"></select>
@@ -581,6 +582,7 @@ table { border-collapse: collapse; width: 100%; }
             <tr>
               <th>Nº Palet</th><th>Producto</th><th>Base / Variedad</th><th>Calibre</th>
               <th>Cajas</th><th>Tipo Caja</th><th>Kg Netos</th><th>Kg Fact.</th>
+              <th>PVP/kg</th><th>PVP (€)</th>
               <th>Cliente</th><th>Documento</th><th>Lote</th><th>Situación</th>
             </tr>
           </thead>

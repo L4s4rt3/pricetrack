@@ -21,16 +21,16 @@ const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','A
 const CHART_COLORS = ['#01696f','#006494','#437a22','#d19900','#da7101','#a12c7b','#964219','#5591c7','#2d8650','#8b5cf6']
 
 // =========== UTILITIES ===========
-function getUnique(field) { return [...new Set(data.map(d => d[field]).filter(Boolean))].sort() }
-function getYears() { return [...new Set(data.map(d => d.year))].map(Number).sort() }
+function getUnique(field, rows = data) { return [...new Set(rows.map(d => d[field]).filter(Boolean))].sort() }
+function getYears(rows = data) { return [...new Set(rows.map(d => d.year))].map(Number).sort() }
 function getCampaignStart(d) { return d.month && d.month >= 10 ? d.year : d.year - 1 }
-function getCampaigns() { return [...new Set(data.map(getCampaignStart))].map(Number).sort() }
+function getCampaigns(rows = data) { return [...new Set(rows.map(getCampaignStart))].map(Number).sort() }
 function campaignLabel(c) { return `${c}/${String((c + 1) % 100).padStart(2, '0')}` }
 function sameCampaign(d, c) { return getCampaignStart(d) === Number(c) }
 function campaignMonthIndex(d) { return d.month ? (d.month + 2) % 12 : 0 }
 const CAMPAIGN_MONTHS = ['Oct','Nov','Dic','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep']
-function getProducts() { return getUnique('product') }
-function getCategories() { return getUnique('category') }
+function getProducts(rows = data) { return getUnique('product', rows.filter(d => isReadableProductName(d.product))) }
+function getCategories(rows = data) { return getUnique('category', rows) }
 function getClientes() { return [...new Set(data.map(getClientLabel).filter(v => v && v !== '—'))].sort() }
 function getClientName(d) {
   const code = String(d.cliente || '').trim()
@@ -79,6 +79,31 @@ function normalizeText(value) {
     .toUpperCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+}
+
+function isReadableProductName(value) {
+  const text = String(value || '').trim()
+  if (!text) return false
+  if (/PK\x03\x04|Content_Types|docProps|workbook|sharedStrings/i.test(text)) return false
+  if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/.test(text)) return false
+  const visible = [...text].filter(ch => !/\s/.test(ch))
+  if (visible.length < 8) return true
+  const bad = visible.filter(ch => !/[A-Za-z0-9ÁÉÍÓÚÜÑáéíóúüñÇçÀÈÌÒÙàèìòù.,;:()\/+\-'ºª&%€#]/.test(ch)).length
+  return bad / visible.length <= 0.18
+}
+
+function hasEconomicValue(d) {
+  return [d.price, d.base_iva, d.kilos, d.unidades, d.litros].some(v => Math.abs(Number(v || 0)) > 0)
+}
+
+function isMainOrangePriceRow(d) {
+  if (!isReadableProductName(d.product) || !hasEconomicValue(d)) return false
+  const cls = getLineClassification(d)
+  return cls.type === 'Producto' && cls.product === 'Naranja' && d.price > 0 && d.kilos > 0
+}
+
+function getMainOrangePriceRows() {
+  return data.filter(isMainOrangePriceRow)
 }
 
 function firstMatch(text, rules, fallback = '') {
@@ -377,10 +402,11 @@ window.navigate = navigate
 
 // =========== POPULATE SELECTS ===========
 function populateAllSelects() {
-  const years    = getYears()
-  const campaigns = getCampaigns()
-  const products = getProducts()
-  const cats     = getCategories()
+  const mainRows = getMainOrangePriceRows()
+  const years    = getYears(mainRows.length ? mainRows : data)
+  const campaigns = getCampaigns(mainRows.length ? mainRows : data)
+  const products = getProducts(mainRows.length ? mainRows : data)
+  const cats     = getCategories(mainRows.length ? mainRows : data)
   const clientes = getClientes()
   const invoiceTypes = getInvoiceTypes()
   const productBases = getProductBases()
@@ -422,15 +448,20 @@ function populateAllSelects() {
   if (sy) sy.innerHTML = `<option value="">Todas</option>` + campaigns.map(c => `<option value="${c}">${campaignLabel(c)}</option>`).join('')
 
   // Ventas selects
-  const setOpts = (id, items, allLabel, labelFn = i => i) => {
+  const setOpts = (id, items, allLabel, labelFn = i => i, defaultValue = '') => {
     const el = document.getElementById(id)
     if (!el) return
     const prev = el.value
     el.innerHTML = `<option value="">${allLabel}</option>` + items.map(i => `<option value="${i}">${labelFn(i)}</option>`).join('')
     if (items.includes(prev) || items.map(String).includes(prev)) el.value = prev
+    else if (defaultValue && (items.includes(defaultValue) || items.map(String).includes(defaultValue))) el.value = defaultValue
   }
-  ;['ventas-type','table-type','product-type'].forEach(id => setOpts(id, invoiceTypes, 'Todos los tipos'))
-  ;['ventas-base','table-base','product-base'].forEach(id => setOpts(id, productBases, 'Todos los productos'))
+  setOpts('ventas-type', invoiceTypes, 'Todos los tipos')
+  setOpts('table-type', invoiceTypes, 'Todos los tipos', i => i, 'Producto')
+  setOpts('product-type', invoiceTypes, 'Todos los tipos', i => i, 'Producto')
+  setOpts('ventas-base', productBases, 'Todos los productos')
+  setOpts('table-base', productBases, 'Todos los productos', i => i, 'Naranja')
+  setOpts('product-base', productBases, 'Todos los productos', i => i, 'Naranja')
   ;['ventas','table','product'].forEach(scope => {
     const base = document.getElementById(`${scope}-base`)?.value || ''
     setOpts(`${scope}-variety`, getVarieties(base), 'Todas las variedades')
