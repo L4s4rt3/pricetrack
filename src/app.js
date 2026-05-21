@@ -1685,13 +1685,13 @@ const COLUMN_AUTO_MAP = {
   ano:                 ['año','ano','year','ejercicio','fecha','fecha albarán'],
   mes:                 ['mes','month','fecha'],
   notas:               ['notas','notes','observaciones','comentarios','matrícula','matricula'],
-  cliente:             ['cliente','client','cod. cliente','código cliente','codigo cliente'],
+  cliente:             ['cliente','client','cod. cliente','código cliente','codigo cliente','cliente cc'],
   denominacion_social: ['denominación social','denominacion social','empresa','razon social','razón social','nombre cliente','nombre empresa'],
   referencia:          ['referencia','ref.','ref','cod. articulo','código artículo','codigo articulo'],
   kilos:               ['kilos','kg','kgs','peso','kilos netos'],
   unidades:            ['unid','unidades','units','cantidad','bultos'],
   litros:              ['litros','litres','liters','lts'],
-  base_iva:            ['base iva','baseiva','importe total','total','base imponible'],
+  base_iva:            ['base iva','baseiva','importe total','total','base imponible','importe'],
   tarifa:              ['tarifa','rate'],
   coste_adic:          ['costeadic','coste adic','coste adicional'],
   documento:           ['documento','doc.','doc','albarán','albaran'],
@@ -1699,7 +1699,6 @@ const COLUMN_AUTO_MAP = {
   fecha_fra:           ['fecha fra.','fecha fra','fecha factura','fechafra'],
   lin:                 ['lin','línea','linea','nº línea'],
 }
-
 let importData = null
 
 function detectDelimiter(line) {
@@ -1737,7 +1736,13 @@ async function decodeText(buf) {
   return text
 }
 function normalizeHeaderName(value) {
-  return String(value || '')
+  let text = String(value || '')
+    .replace(/Ã¡/g, 'á').replace(/Ã©/g, 'é').replace(/Ã­/g, 'í')
+    .replace(/Ã³/g, 'ó').replace(/Ãº/g, 'ú').replace(/Ã±/g, 'ñ')
+    .replace(/Ã/g, 'Á').replace(/Ã‰/g, 'É').replace(/Ã/g, 'Í')
+    .replace(/Ã“/g, 'Ó').replace(/Ãš/g, 'Ú').replace(/Ã‘/g, 'Ñ')
+    .replace(/Âº/g, 'º').replace(/Âª/g, 'ª')
+  return text
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -1754,6 +1759,42 @@ function headerMatches(field, header, synonyms) {
     return normalizedHeader.includes('social') && (normalizedHeader.includes('denomin') || normalizedHeader.includes('razon') || normalizedHeader.includes('nombre'))
   }
   return false
+}
+
+function scoreHeaderRow(row) {
+  const headers = row.map(c => String(c || '').trim())
+  const map = buildMapping(headers)
+  let score = 0
+  if (map.producto !== null) score += 4
+  if (map.precio !== null) score += 2
+  if (map.base_iva !== null) score += 2
+  if (map.kilos !== null) score += 1
+  if (map.documento !== null) score += 1
+  if (map.cliente !== null) score += 1
+  if (map.referencia !== null) score += 1
+  if (map.ano !== null) score += 1
+  return score
+}
+
+function detectHeaderRow(rawRows) {
+  let best = { index: 0, score: -1 }
+  rawRows.slice(0, 20).forEach((row, index) => {
+    const score = scoreHeaderRow(row)
+    if (score > best.score) best = { index, score }
+  })
+  return best.score >= 6 ? best.index : 0
+}
+
+function tableFromRawRows(rawRows) {
+  const cleanRows = rawRows.filter(row => row.some(c => String(c || '').trim()))
+  const headerIndex = detectHeaderRow(cleanRows)
+  const headers = cleanRows[headerIndex].map(h => String(h).trim().replace(/^"|"$/g,''))
+  const rows = cleanRows.slice(headerIndex + 1).map(row => {
+    const cells = row.map(c => String(c).trim().replace(/^"|"$/g,''))
+    while (cells.length < headers.length) cells.push('')
+    return cells.slice(0, headers.length)
+  })
+  return { headers, rows }
 }
 async function handleFileSelect(e) {
   const file = e.target.files[0]
@@ -1772,27 +1813,21 @@ async function handleFileSelect(e) {
       const ws  = wb.Sheets[wb.SheetNames[0]]
       const raw = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' })
       if (raw.length < 2) { showToast('⚠ El archivo no tiene datos','error'); return }
-      headers = raw[0].map(h => String(h).trim())
-      rows    = raw.slice(1).filter(r=>r.some(c=>String(c).trim())).map(r=>{ while(r.length<headers.length)r.push(''); return r.map(c=>String(c).trim()) })
+      ;({ headers, rows } = tableFromRawRows(raw))
     } else if (ext === 'csv' && typeof Papa !== 'undefined') {
       const buf = await file.arrayBuffer()
       const text = await decodeText(buf)
       const delimiter = detectDelimiter(text.split('\n')[0] || '')
       const result = Papa.parse(text, { delimiter, header: false, skipEmptyLines: true })
       if (!result.data || result.data.length < 2) { showToast('⚠ El archivo no tiene datos','error'); return }
-      headers = result.data[0].map(h => String(h).trim().replace(/^"|"$/g,''))
-      rows = result.data.slice(1).filter(r => r.some(c => String(c).trim())).map(r => {
-        while (r.length < headers.length) r.push('')
-        return r.map(c => String(c).trim().replace(/^"|"$/g,''))
-      })
+      ;({ headers, rows } = tableFromRawRows(result.data))
     } else {
       const buf  = await file.arrayBuffer()
       const text = await decodeText(buf)
       const lines= text.split('\n').filter(l=>l.trim())
       if (lines.length < 2) { showToast('⚠ El archivo no tiene datos','error'); return }
       const delimiter = detectDelimiter(lines[0])
-      headers = lines[0].split(delimiter).map(h=>h.trim().replace(/^"|"$/g,''))
-      rows    = lines.slice(1).map(l=>{ const p=l.split(delimiter).map(c=>c.trim().replace(/^"|"$/g,'')); while(p.length<headers.length)p.push(''); return p })
+      ;({ headers, rows } = tableFromRawRows(lines.map(l => l.split(delimiter))))
     }
   } catch(err) { console.error(err); showToast('⚠ Error al leer el archivo','error'); return }
 
