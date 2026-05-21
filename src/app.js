@@ -40,6 +40,16 @@ function getClientName(d) {
 function getClientLabel(d) { return getClientName(d) || d.cliente || '—' }
 function avg(arr) { const v = arr.filter(x => x > 0); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : 0 }
 function sum(arr) { return arr.reduce((a,b)=>a+b,0) }
+function maxValue(arr) {
+  let max = -Infinity
+  for (const value of arr) if (value > max) max = value
+  return max === -Infinity ? 0 : max
+}
+function minValue(arr) {
+  let min = Infinity
+  for (const value of arr) if (value < min) min = value
+  return min === Infinity ? 0 : min
+}
 function fmt(n) { return (+n).toFixed(2) }
 function fmtPct(n) { return (n >= 0 ? '+' : '') + n.toFixed(1) + '%' }
 function fmtEur(n) {
@@ -479,8 +489,8 @@ function renderDashboard() {
       { label: 'Clientes únicos',         value: String(nClientes), delta: 'Cartera activa', flat: true },
     ]
   } else {
-    const maxP   = allPrices.length ? Math.max(...allPrices) : 0
-    const minP   = allPrices.length ? Math.min(...allPrices) : 0
+    const maxP   = allPrices.length ? maxValue(allPrices) : 0
+    const minP   = allPrices.length ? minValue(allPrices) : 0
     const maxRec = data.find(d => d.price === maxP)
     const minRec = data.find(d => d.price === minP)
     kpis = [
@@ -564,7 +574,7 @@ function renderDashCharts() {
       datasets: [{
         label: `${selProduct || (hasRevenue ? 'Facturación' : 'Media')} ${campaignLabel(camp2)}`,
         data: monthlyData,
-        backgroundColor: monthlyData.map(v => v > 0 && v === Math.max(...monthlyData.filter(Boolean)) ? '#da7101' : 'rgba(1,105,111,0.65)'),
+        backgroundColor: monthlyData.map(v => v > 0 && v === maxValue(monthlyData.filter(Boolean)) ? '#da7101' : 'rgba(1,105,111,0.65)'),
         borderRadius: 5, borderSkipped: false,
       }]
     },
@@ -623,8 +633,8 @@ function renderHistoryView() {
       <div class="kpi-card"><div class="kpi-label">Producto</div><div class="kpi-value" style="font-size:1rem">${top.product}</div><div class="kpi-delta delta-flat">${top.category}</div></div>
       <div class="kpi-card"><div class="kpi-label">Primer precio</div><div class="kpi-value">${fmt(first.price)} €</div></div>
       <div class="kpi-card"><div class="kpi-label">Último precio</div><div class="kpi-value">${fmt(last.price)} €</div><div class="kpi-delta ${delta >= 0 ? 'delta-up' : 'delta-down'}">${fmtPct(delta)}</div></div>
-      <div class="kpi-card"><div class="kpi-label">Máximo</div><div class="kpi-value">${prices.length ? fmt(Math.max(...prices)) : '—'} €</div></div>
-      <div class="kpi-card"><div class="kpi-label">Mínimo</div><div class="kpi-value">${prices.length ? fmt(Math.min(...prices)) : '—'} €</div></div>
+      <div class="kpi-card"><div class="kpi-label">Máximo</div><div class="kpi-value">${prices.length ? fmt(maxValue(prices)) : '—'} €</div></div>
+      <div class="kpi-card"><div class="kpi-label">Mínimo</div><div class="kpi-value">${prices.length ? fmt(minValue(prices)) : '—'} €</div></div>
     `
   }
 
@@ -1093,8 +1103,8 @@ function renderTrendCharts() {
   // KPIs
   const kpiLabel = hasPrices ? 'Precio medio período' : 'Facturación total'
   const kpiValue = hasPrices ? fmtEur(avg(prices)) : fmtEur(totRev)
-  const maxVal   = hasPrices ? (prices.length ? Math.max(...prices) : 0) : Math.max(...yearVals)
-  const minVal   = hasPrices ? (prices.length ? Math.min(...prices) : 0) : Math.min(...yearVals)
+  const maxVal   = hasPrices ? (prices.length ? maxValue(prices) : 0) : maxValue(yearVals)
+  const minVal   = hasPrices ? (prices.length ? minValue(prices) : 0) : minValue(yearVals)
 
   document.getElementById('trend-kpis').innerHTML = `
     <div class="kpi-card"><div class="kpi-label">${kpiLabel}</div><div class="kpi-value">${kpiValue}</div></div>
@@ -1137,8 +1147,8 @@ function renderTrendCharts() {
   if (c2) {
     const ds = hasPrices
       ? [
-          { label: 'Máximo', data: campaigns.map(c => { const p = filtered.filter(d => sameCampaign(d, c) && d.price>0).map(d=>d.price); return p.length ? Math.max(...p) : 0 }), backgroundColor: 'rgba(218,113,1,0.7)', borderRadius: 4 },
-          { label: 'Mínimo', data: campaigns.map(c => { const p = filtered.filter(d => sameCampaign(d, c) && d.price>0).map(d=>d.price); return p.length ? Math.min(...p) : 0 }), backgroundColor: 'rgba(1,105,111,0.5)', borderRadius: 4 },
+          { label: 'Máximo', data: campaigns.map(c => { const p = filtered.filter(d => sameCampaign(d, c) && d.price>0).map(d=>d.price); return p.length ? maxValue(p) : 0 }), backgroundColor: 'rgba(218,113,1,0.7)', borderRadius: 4 },
+          { label: 'Mínimo', data: campaigns.map(c => { const p = filtered.filter(d => sameCampaign(d, c) && d.price>0).map(d=>d.price); return p.length ? minValue(p) : 0 }), backgroundColor: 'rgba(1,105,111,0.5)', borderRadius: 4 },
         ]
       : [{ label: 'Facturación anual', data: yearVals, backgroundColor: 'rgba(1,105,111,0.6)', borderRadius: 4 }]
     charts['trendMinMaxChart'] = new Chart(c2, {
@@ -1223,8 +1233,8 @@ function renderCompare() {
     const a   = avg(pts.filter(d=>d.price>0).map(d=>d.price))
     const rev = sum(pts.map(d=>d.base_iva))
     const kg  = sum(pts.map(d=>d.kilos))
-    const mx  = pts.filter(d=>d.price>0).length ? Math.max(...pts.filter(d=>d.price>0).map(d=>d.price)) : 0
-    const mn  = pts.filter(d=>d.price>0).length ? Math.min(...pts.filter(d=>d.price>0).map(d=>d.price)) : 0
+    const mx  = pts.filter(d=>d.price>0).length ? maxValue(pts.filter(d=>d.price>0).map(d=>d.price)) : 0
+    const mn  = pts.filter(d=>d.price>0).length ? minValue(pts.filter(d=>d.price>0).map(d=>d.price)) : 0
     const pct = prevAvg && a ? ((a-prevAvg)/prevAvg)*100 : null
     prevAvg = a
     return `<tr>
@@ -1540,8 +1550,8 @@ function doSearch() {
 
   const prices  = results.map(d => d.price).filter(p=>p>0)
   const avgPrice= avg(prices)
-  const maxPrice= prices.length ? Math.max(...prices) : 0
-  const minPrice= prices.length ? Math.min(...prices) : 0
+  const maxPrice= prices.length ? maxValue(prices) : 0
+  const minPrice= prices.length ? minValue(prices) : 0
 
   container.innerHTML = `
     <div class="grid-3" style="margin-bottom: var(--space-6)">
@@ -2107,7 +2117,9 @@ async function executeImport(mapOverride = importMap) {
       skippedFiles.push(`${source.name}: falta ${missingImportFields(sourceMap).join(', ')}`)
       continue
     }
-    records.push(...buildImportRecords(source.rows, sourceMap).map(record => enrichImportRecord(record, lookups)))
+    for (const record of buildImportRecords(source.rows, sourceMap)) {
+      records.push(enrichImportRecord(record, lookups))
+    }
   }
 
   const firstReady = sources.find(source => importMapIsReady(source.map || buildMapping(source.headers))) || sources[0]
