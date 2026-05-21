@@ -49,28 +49,41 @@ export function normalizeRow(row) {
   }
 }
 
+function cleanDbText(value) {
+  return String(value ?? '')
+    .replace(/\u0000/g, '')
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function cleanDbNumber(value) {
+  const n = Number(value ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
 function toDb(r) {
   return {
-    producto: r.product,
-    categoria: r.category,
-    precio: r.price,
-    unidad: r.unit || 'kg',
-    ano: r.year,
-    mes: r.month || null,
-    notas: r.notes || '',
-    cliente: r.cliente || '',
-    denominacion_social: r.denominacion_social || '',
-    referencia: r.referencia || '',
-    kilos: r.kilos || 0,
-    unidades: r.unidades || 0,
-    litros: r.litros || 0,
-    tarifa: r.tarifa || 0,
-    coste_adic: r.coste_adic || 0,
-    base_iva: r.base_iva || 0,
-    documento: r.documento || '',
-    factura: r.factura || '',
-    fecha_fra: r.fecha_fra || '',
-    lin: r.lin || 0,
+    producto: cleanDbText(r.product),
+    categoria: cleanDbText(r.category || 'Sin categoria'),
+    precio: cleanDbNumber(r.price),
+    unidad: cleanDbText(r.unit || 'kg'),
+    ano: cleanDbNumber(r.year) || new Date().getFullYear(),
+    mes: r.month ? cleanDbNumber(r.month) : null,
+    notas: cleanDbText(r.notes),
+    cliente: cleanDbText(r.cliente),
+    denominacion_social: cleanDbText(r.denominacion_social),
+    referencia: cleanDbText(r.referencia),
+    kilos: cleanDbNumber(r.kilos),
+    unidades: cleanDbNumber(r.unidades),
+    litros: cleanDbNumber(r.litros),
+    tarifa: cleanDbNumber(r.tarifa),
+    coste_adic: cleanDbNumber(r.coste_adic),
+    base_iva: cleanDbNumber(r.base_iva),
+    documento: cleanDbText(r.documento),
+    factura: cleanDbText(r.factura),
+    fecha_fra: cleanDbText(r.fecha_fra),
+    lin: cleanDbNumber(r.lin),
   }
 }
 
