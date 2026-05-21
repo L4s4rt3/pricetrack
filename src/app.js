@@ -1700,6 +1700,7 @@ const COLUMN_AUTO_MAP = {
   lin:                 ['lin','línea','linea','nº línea'],
 }
 let importData = null
+let importMap = null
 
 function detectDelimiter(line) {
   const tabs   = (line.match(/\t/g)||[]).length
@@ -1736,12 +1737,14 @@ async function decodeText(buf) {
   return text
 }
 function normalizeHeaderName(value) {
+  const mojibake = {
+    'Ã¡':'á','Ã©':'é','Ã­':'í','Ã³':'ó','Ãº':'ú','Ã±':'ñ',
+    'Ã':'Á','Ã‰':'É','Ã':'Í','Ã“':'Ó','Ãš':'Ú','Ã‘':'Ñ',
+    'ÃƒÂ¡':'á','ÃƒÂ©':'é','ÃƒÂ­':'í','ÃƒÂ³':'ó','ÃƒÂº':'ú','ÃƒÂ±':'ñ',
+    'Âº':'º','Âª':'ª','Ã‚Âº':'º','Ã‚Âª':'ª'
+  }
   let text = String(value || '')
-    .replace(/Ã¡/g, 'á').replace(/Ã©/g, 'é').replace(/Ã­/g, 'í')
-    .replace(/Ã³/g, 'ó').replace(/Ãº/g, 'ú').replace(/Ã±/g, 'ñ')
-    .replace(/Ã/g, 'Á').replace(/Ã‰/g, 'É').replace(/Ã/g, 'Í')
-    .replace(/Ã“/g, 'Ó').replace(/Ãš/g, 'Ú').replace(/Ã‘/g, 'Ñ')
-    .replace(/Âº/g, 'º').replace(/Âª/g, 'ª')
+  Object.entries(mojibake).forEach(([bad, good]) => { text = text.split(bad).join(good) })
   return text
     .toLowerCase()
     .normalize('NFD')
@@ -1832,15 +1835,11 @@ async function handleFileSelect(e) {
   } catch(err) { console.error(err); showToast('⚠ Error al leer el archivo','error'); return }
 
   importData = { headers, rows }
+  importMap = buildMapping(headers)
   showPreview(importData)
-  const map = buildMapping(headers)
-  applyMappingToUI(map, headers)
+  applyMappingToUI(importMap, headers)
 
-  if (map.producto !== null && (map.precio !== null || map.base_iva !== null)) {
-    await executeImport()
-  } else {
-    document.getElementById('column-mapping').style.display = 'block'
-  }
+  await executeImport(importMap)
 }
 window.handleFileSelect = handleFileSelect
 
@@ -1862,6 +1861,17 @@ function buildMapping(headers) {
     if (dateIdx >= 0) { if(map.ano===null) map.ano=dateIdx; if(map.mes===null) map.mes=dateIdx }
   }
   return map
+}
+
+function importMapIsReady(map) {
+  return map?.producto !== null && (map.precio !== null || map.base_iva !== null)
+}
+
+function missingImportFields(map) {
+  const missing = []
+  if (map?.producto === null) missing.push('producto/articulo')
+  if (map?.precio === null && map?.base_iva === null) missing.push('PVP o Base IVA')
+  return missing
 }
 
 function applyMappingToUI(map, headers) {
@@ -1937,16 +1947,20 @@ function recordsAreSameForImport(a, b) {
     && sameImportValue(a.lin, b.lin, 0)
 }
 
-async function executeImport() {
+async function executeImport(mapOverride = importMap) {
   if (!importData?.rows?.length) { showToast('⚠ No hay datos para importar','error'); return }
   const { headers, rows } = importData
 
-  const map = {}
-  Object.keys(COLUMN_AUTO_MAP).forEach(field => {
-    const el  = document.getElementById(`map-${field}`)
-    const val = el?.value
-    map[field] = (val && val !== '') ? parseInt(val) : null
-  })
+  const map = mapOverride || buildMapping(headers)
+  importMap = map
+  applyMappingToUI(map, headers)
+
+  if (!importMapIsReady(map)) {
+    const missing = missingImportFields(map).join(', ')
+    const seen = headers.filter(Boolean).join(' | ')
+    showToast(`⚠ No puedo importar automático: falta ${missing}. Cabeceras detectadas: ${seen}`, 'error', 10000)
+    return
+  }
 
   const get = (row, field) => map[field] !== null ? (row[map[field]]||'') : ''
 
@@ -2058,13 +2072,7 @@ async function executeImport() {
 
 async function importCSV() {
   if (!importData) { showToast('⚠ Selecciona un archivo primero','error'); return }
-  const mappingEl = document.getElementById('column-mapping')
-  if (mappingEl.style.display === 'block') { await executeImport(); return }
-  const map = buildMapping(importData.headers)
-  applyMappingToUI(map, importData.headers)
-  if (map.producto !== null && (map.precio !== null || map.base_iva !== null)) { await executeImport(); return }
-  mappingEl.style.display = 'block'
-  showToast('⚠ Asigna las columnas y pulsa Importar de nuevo')
+  await executeImport(importMap || buildMapping(importData.headers))
 }
 window.importCSV = importCSV
 
