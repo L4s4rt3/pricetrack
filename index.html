@@ -694,11 +694,11 @@ table { border-collapse: collapse; width: 100%; }
     <div class="modal-title">Importar datos</div>
     <p style="font-size: var(--text-sm); color: var(--color-text-muted); margin-bottom: var(--space-4)">
       Selecciona un archivo CSV, TSV, XLSX o <strong>.file</strong> con los datos de precios.<br>
-      La herramienta detecta automáticamente las columnas (compatible con ventas.csv).
+      La herramienta detecta automáticamente las columnas y fusiona archivos complementarios.
     </p>
     <div class="form-group">
-      <input type="file" id="file-input" accept=".csv,.tsv,.txt,.file,.xlsx,.xls" style="display:none" onchange="handleFileSelect(event)">
-      <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()">Seleccionar archivo</button>
+      <input type="file" id="file-input" accept=".csv,.tsv,.txt,.file,.xlsx,.xls" multiple style="display:none" onchange="handleFileSelect(event)">
+      <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()">Seleccionar archivos</button>
       <span id="file-name" style="font-size:var(--text-xs);color:var(--color-text-muted);margin-left:var(--space-2)"></span>
     </div>
     <div id="preview-section" style="display:none;margin-top:var(--space-4)">

@@ -1799,47 +1799,57 @@ function tableFromRawRows(rawRows) {
   })
   return { headers, rows }
 }
-async function handleFileSelect(e) {
-  const file = e.target.files[0]
-  if (!file) return
-  document.getElementById('file-name').textContent = file.name
-  document.getElementById('column-mapping').style.display  = 'none'
-  document.getElementById('preview-section').style.display = 'none'
-
+async function parseImportFile(file) {
   const ext = file.name.split('.').pop().toLowerCase()
   let headers = [], rows = []
 
+  if (['xlsx','xls'].includes(ext) && typeof XLSX !== 'undefined') {
+    const buf = await file.arrayBuffer()
+    const wb  = XLSX.read(buf, { type:'array' })
+    const ws  = wb.Sheets[wb.SheetNames[0]]
+    const raw = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' })
+    if (raw.length < 2) throw new Error('El archivo no tiene datos')
+    ;({ headers, rows } = tableFromRawRows(raw))
+  } else if (ext === 'csv' && typeof Papa !== 'undefined') {
+    const buf = await file.arrayBuffer()
+    const text = await decodeText(buf)
+    const delimiter = detectDelimiter(text.split('\n')[0] || '')
+    const result = Papa.parse(text, { delimiter, header: false, skipEmptyLines: true })
+    if (!result.data || result.data.length < 2) throw new Error('El archivo no tiene datos')
+    ;({ headers, rows } = tableFromRawRows(result.data))
+  } else {
+    const buf  = await file.arrayBuffer()
+    const text = await decodeText(buf)
+    const lines= text.split('\n').filter(l=>l.trim())
+    if (lines.length < 2) throw new Error('El archivo no tiene datos')
+    const delimiter = detectDelimiter(lines[0])
+    ;({ headers, rows } = tableFromRawRows(lines.map(l => l.split(delimiter))))
+  }
+
+  const map = buildMapping(headers)
+  return { name: file.name, headers, rows, map }
+}
+
+async function handleFileSelect(e) {
+  const files = Array.from(e.target.files || [])
+  if (!files.length) return
+  document.getElementById('file-name').textContent = files.length === 1 ? files[0].name : files.length + ' archivos seleccionados'
+  document.getElementById('column-mapping').style.display  = 'none'
+  document.getElementById('preview-section').style.display = 'none'
+
   try {
-    if (['xlsx','xls'].includes(ext) && typeof XLSX !== 'undefined') {
-      const buf = await file.arrayBuffer()
-      const wb  = XLSX.read(buf, { type:'array' })
-      const ws  = wb.Sheets[wb.SheetNames[0]]
-      const raw = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' })
-      if (raw.length < 2) { showToast('⚠ El archivo no tiene datos','error'); return }
-      ;({ headers, rows } = tableFromRawRows(raw))
-    } else if (ext === 'csv' && typeof Papa !== 'undefined') {
-      const buf = await file.arrayBuffer()
-      const text = await decodeText(buf)
-      const delimiter = detectDelimiter(text.split('\n')[0] || '')
-      const result = Papa.parse(text, { delimiter, header: false, skipEmptyLines: true })
-      if (!result.data || result.data.length < 2) { showToast('⚠ El archivo no tiene datos','error'); return }
-      ;({ headers, rows } = tableFromRawRows(result.data))
-    } else {
-      const buf  = await file.arrayBuffer()
-      const text = await decodeText(buf)
-      const lines= text.split('\n').filter(l=>l.trim())
-      if (lines.length < 2) { showToast('⚠ El archivo no tiene datos','error'); return }
-      const delimiter = detectDelimiter(lines[0])
-      ;({ headers, rows } = tableFromRawRows(lines.map(l => l.split(delimiter))))
-    }
-  } catch(err) { console.error(err); showToast('⚠ Error al leer el archivo','error'); return }
-
-  importData = { headers, rows }
-  importMap = buildMapping(headers)
-  showPreview(importData)
-  applyMappingToUI(importMap, headers)
-
-  await executeImport(importMap)
+    const parsedFiles = []
+    for (const file of files) parsedFiles.push(await parseImportFile(file))
+    const first = parsedFiles[0]
+    importData = { headers: first.headers, rows: first.rows, files: parsedFiles }
+    importMap = first.map
+    showPreview(importData)
+    applyMappingToUI(importMap, first.headers)
+    await executeImport(importMap)
+  } catch(err) {
+    console.error(err)
+    showToast('⚠ Error al leer el archivo: ' + (err.message || ''), 'error')
+  }
 }
 window.handleFileSelect = handleFileSelect
 
@@ -1864,13 +1874,20 @@ function buildMapping(headers) {
 }
 
 function importMapIsReady(map) {
-  return map?.producto !== null && (map.precio !== null || map.base_iva !== null)
+  const hasProductLike = map?.producto !== null || map?.referencia !== null || map?.documento !== null
+  const hasDataLike = [
+    map?.precio, map?.base_iva, map?.kilos, map?.unidades, map?.litros,
+    map?.tarifa, map?.coste_adic, map?.documento, map?.referencia
+  ].some(v => v !== null)
+  return hasProductLike && hasDataLike
 }
 
 function missingImportFields(map) {
   const missing = []
-  if (map?.producto === null) missing.push('producto/articulo')
-  if (map?.precio === null && map?.base_iva === null) missing.push('PVP o Base IVA')
+  if (map?.producto === null && map?.referencia === null && map?.documento === null) missing.push('producto/articulo, referencia o documento')
+  if (![map?.precio, map?.base_iva, map?.kilos, map?.unidades, map?.litros, map?.tarifa, map?.coste_adic, map?.documento, map?.referencia].some(v => v !== null)) {
+    missing.push('alguna columna de importe, precio, cantidad, referencia o documento')
+  }
   return missing
 }
 
@@ -1888,7 +1905,12 @@ function showPreview(d) {
   const thead   = `<thead><tr>${d.headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead>`
   const tbody   = `<tbody>${d.rows.slice(0,maxRows).map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody>`
   document.getElementById('preview-table').innerHTML = thead + tbody
-  document.getElementById('preview-info').textContent = `${d.rows.length.toLocaleString('es-ES')} filas · ${d.headers.length} columnas`
+  const files = d.files || []
+  const totalRows = files.length ? files.reduce((sum, file) => sum + file.rows.length, 0) : d.rows.length
+  const label = files.length > 1
+    ? `${files.length.toLocaleString('es-ES')} archivos · ${totalRows.toLocaleString('es-ES')} filas totales · vista previa: ${files[0].name}`
+    : `${d.rows.length.toLocaleString('es-ES')} filas · ${d.headers.length} columnas`
+  document.getElementById('preview-info').textContent = label
   document.getElementById('preview-section').style.display = 'block'
 }
 
@@ -1947,56 +1969,158 @@ function recordsAreSameForImport(a, b) {
     && sameImportValue(a.lin, b.lin, 0)
 }
 
-async function executeImport(mapOverride = importMap) {
-  if (!importData?.rows?.length) { showToast('⚠ No hay datos para importar','error'); return }
-  const { headers, rows } = importData
+function hasImportTextValue(value) {
+  return String(value || '').trim() !== ''
+}
 
-  const map = mapOverride || buildMapping(headers)
-  importMap = map
-  applyMappingToUI(map, headers)
+function hasImportNumberValue(value) {
+  const n = Number(value || 0)
+  return Number.isFinite(n) && n !== 0
+}
 
-  if (!importMapIsReady(map)) {
-    const missing = missingImportFields(map).join(', ')
-    const seen = headers.filter(Boolean).join(' | ')
-    showToast(`⚠ No puedo importar automático: falta ${missing}. Cabeceras detectadas: ${seen}`, 'error', 10000)
-    return
+function mergeImportRecords(base, incoming) {
+  const merged = { ...base }
+  ;[
+    'product','category','unit','notes','cliente','denominacion_social','referencia',
+    'documento','factura','fecha_fra'
+  ].forEach(field => {
+    if (field === 'product') return
+    if (hasImportTextValue(incoming[field])) merged[field] = incoming[field]
+  })
+  if (!hasImportTextValue(merged.product) || (isFallbackImportProduct(merged) && !isFallbackImportProduct(incoming))) {
+    if (hasImportTextValue(incoming.product)) merged.product = incoming.product
   }
+  ;[
+    'price','year','month','kilos','unidades','litros','tarifa','coste_adic','base_iva','lin'
+  ].forEach(field => {
+    if (hasImportNumberValue(incoming[field])) merged[field] = incoming[field]
+  })
+  return merged
+}
 
+function buildImportRecords(rows, map) {
   const get = (row, field) => map[field] !== null ? (row[map[field]]||'') : ''
-
   const records = []
   for (const row of rows) {
-    const product = get(row,'producto')
+    const product = get(row,'producto') || get(row,'referencia') || get(row,'documento')
     if (!product) continue
-    const year = extractYear(get(row,'ano'))
-    if (isNaN(year)) continue
-    const price   = parseNumber(get(row,'precio'))
-    const base_iva= parseNumber(get(row,'base_iva')) || 0
-    const catRaw  = get(row,'categoria')
+    const year = extractYear(get(row,'ano')) || extractYear(get(row,'fecha_fra')) || new Date().getFullYear()
+    const month = extractMonth(get(row,'mes')) || extractMonth(get(row,'ano')) || extractMonth(get(row,'fecha_fra'))
+    let price = parseNumber(get(row,'precio'))
+    const base_iva = parseNumber(get(row,'base_iva')) || 0
+    const kilos = parseNumber(get(row,'kilos')) || 0
+    if ((isNaN(price) || price === 0) && base_iva > 0 && kilos > 0) price = base_iva / kilos
+    const catRaw = get(row,'categoria')
     records.push({
       product, category: catRaw || detectCategory(product),
-      price:    isNaN(price) ? 0 : price,
-      unit:     get(row,'unidad') || 'kg',
+      price: isNaN(price) ? 0 : price,
+      unit: get(row,'unidad') || 'kg',
       year,
-      month:    extractMonth(get(row,'mes')),
-      notes:    get(row,'notas'),
-      cliente:             get(row,'cliente'),
+      month,
+      notes: get(row,'notas'),
+      cliente: get(row,'cliente'),
       denominacion_social: get(row,'denominacion_social'),
-      referencia:          get(row,'referencia'),
-      kilos:     parseNumber(get(row,'kilos'))     || 0,
-      unidades:  parseNumber(get(row,'unidades'))  || 0,
-      litros:    parseNumber(get(row,'litros'))     || 0,
-      tarifa:    parseNumber(get(row,'tarifa'))     || 0,
-      coste_adic:parseNumber(get(row,'coste_adic'))|| 0,
+      referencia: get(row,'referencia'),
+      kilos,
+      unidades: parseNumber(get(row,'unidades')) || 0,
+      litros: parseNumber(get(row,'litros')) || 0,
+      tarifa: parseNumber(get(row,'tarifa')) || 0,
+      coste_adic: parseNumber(get(row,'coste_adic')) || 0,
       base_iva,
       documento: get(row,'documento'),
-      factura:   get(row,'factura'),
+      factura: get(row,'factura'),
       fecha_fra: get(row,'fecha_fra'),
-      lin:       parseInt(get(row,'lin'))||0,
+      lin: parseInt(get(row,'lin')) || 0,
     })
   }
+  return records
+}
 
-  if (!records.length) { showToast('⚠ No hay registros válidos (revisa la asignación de columnas)','error'); return }
+function isFallbackImportProduct(record) {
+  const product = normalizeImportKeyValue(record.product)
+  if (!product) return true
+  return [record.documento, record.factura, record.referencia]
+    .map(normalizeImportKeyValue)
+    .filter(Boolean)
+    .includes(product)
+}
+
+function getMappedValue(row, map, field) {
+  return map[field] !== null ? (row[map[field]] || '') : ''
+}
+
+function collectImportLookups(sources) {
+  const productsByRef = new Map()
+  const clientsByCode = new Map()
+  for (const source of sources) {
+    const map = source.map || buildMapping(source.headers)
+    for (const row of source.rows) {
+      const ref = normalizeImportKeyValue(getMappedValue(row, map, 'referencia'))
+      const product = getMappedValue(row, map, 'producto')
+      if (ref && hasImportTextValue(product) && !productsByRef.has(ref)) productsByRef.set(ref, product)
+
+      const client = normalizeImportKeyValue(getMappedValue(row, map, 'cliente'))
+      const clientName = getMappedValue(row, map, 'denominacion_social')
+      if (client && hasImportTextValue(clientName) && !clientsByCode.has(client)) clientsByCode.set(client, clientName)
+    }
+  }
+  return { productsByRef, clientsByCode }
+}
+
+function enrichImportRecord(record, lookups) {
+  const ref = normalizeImportKeyValue(record.referencia)
+  const productName = ref ? lookups.productsByRef.get(ref) : ''
+  if (productName && (!hasImportTextValue(record.product) || isFallbackImportProduct(record))) record.product = productName
+
+  const client = normalizeImportKeyValue(record.cliente)
+  const clientName = client ? lookups.clientsByCode.get(client) : ''
+  if (clientName && (!hasImportTextValue(record.denominacion_social) || normalizeImportKeyValue(record.denominacion_social) === client)) {
+    record.denominacion_social = clientName
+  }
+  return record
+}
+
+async function executeImport(mapOverride = importMap) {
+  if (!importData?.rows?.length) { showToast('⚠ No hay datos para importar','error'); return }
+  const sources = importData.files?.length
+    ? importData.files
+    : [{ name: 'archivo', headers: importData.headers, rows: importData.rows, map: mapOverride || buildMapping(importData.headers) }]
+  const records = []
+  const skippedFiles = []
+  const supportFiles = []
+  const lookups = collectImportLookups(sources)
+
+  for (const source of sources) {
+    const sourceMap = source.map || buildMapping(source.headers)
+    if (!importMapIsReady(sourceMap)) {
+      const hasSupportData = source.rows.some(row => {
+        const ref = getMappedValue(row, sourceMap, 'referencia')
+        const product = getMappedValue(row, sourceMap, 'producto')
+        const client = getMappedValue(row, sourceMap, 'cliente')
+        const clientName = getMappedValue(row, sourceMap, 'denominacion_social')
+        return (hasImportTextValue(ref) && hasImportTextValue(product)) || (hasImportTextValue(client) && hasImportTextValue(clientName))
+      })
+      if (hasSupportData) {
+        supportFiles.push(source.name)
+        continue
+      }
+      skippedFiles.push(`${source.name}: falta ${missingImportFields(sourceMap).join(', ')}`)
+      continue
+    }
+    records.push(...buildImportRecords(source.rows, sourceMap).map(record => enrichImportRecord(record, lookups)))
+  }
+
+  const firstReady = sources.find(source => importMapIsReady(source.map || buildMapping(source.headers))) || sources[0]
+  if (firstReady) {
+    importMap = firstReady.map || buildMapping(firstReady.headers)
+    applyMappingToUI(importMap, firstReady.headers)
+  }
+
+  if (!records.length) {
+    const detail = skippedFiles.length ? '. ' + skippedFiles.join(' · ') : ''
+    showToast('⚠ No hay registros validos para importar' + detail, 'error', 10000)
+    return
+  }
 
   const progressEl  = document.getElementById('import-progress')
   const progressBar = document.getElementById('import-progress-bar')
@@ -2015,8 +2139,9 @@ async function executeImport(mapOverride = importMap) {
       const key = getImportKey(record)
       const pendingInsert = insertByKey.get(key)
       if (pendingInsert) {
-        if (recordsAreSameForImport(pendingInsert, record)) skipped += 1
-        else insertByKey.set(key, record)
+        const merged = mergeImportRecords(pendingInsert, record)
+        if (recordsAreSameForImport(pendingInsert, merged)) skipped += 1
+        insertByKey.set(key, merged)
         return
       }
 
@@ -2026,13 +2151,14 @@ async function executeImport(mapOverride = importMap) {
         return
       }
 
-      if (recordsAreSameForImport(existing, record)) {
+      const merged = mergeImportRecords(existing, record)
+      if (recordsAreSameForImport(existing, merged)) {
         skipped += 1
         return
       }
 
-      updateById.set(existing.id, { ...record, id: existing.id, created_at: existing.created_at })
-      existingByKey.set(key, { ...existing, ...record })
+      updateById.set(existing.id, { ...merged, id: existing.id, created_at: existing.created_at })
+      existingByKey.set(key, merged)
     })
 
     const toInsert = [...insertByKey.values()]
@@ -2061,7 +2187,10 @@ async function executeImport(mapOverride = importMap) {
     data = data.concat(saved)
     closeModal('import-modal')
     populateAllSelects()
-    showToast('✓ ' + saved.length.toLocaleString('es-ES') + ' añadidos · ' + updated.length.toLocaleString('es-ES') + ' actualizados · ' + skipped.toLocaleString('es-ES') + ' duplicados ignorados', '', 6000)
+    const fileLabel = sources.length > 1 ? sources.length.toLocaleString('es-ES') + ' archivos · ' : ''
+    const skippedFileLabel = skippedFiles.length ? ' · ' + skippedFiles.length.toLocaleString('es-ES') + ' archivos sin datos suficientes' : ''
+    const supportFileLabel = supportFiles.length ? ' · ' + supportFiles.length.toLocaleString('es-ES') + ' archivos usados como apoyo' : ''
+    showToast('✓ ' + fileLabel + saved.length.toLocaleString('es-ES') + ' añadidos · ' + updated.length.toLocaleString('es-ES') + ' actualizados · ' + skipped.toLocaleString('es-ES') + ' duplicados ignorados' + supportFileLabel + skippedFileLabel, '', 6000)
     rerenderCurrentPage()
   } catch(e) {
     console.error(e)
