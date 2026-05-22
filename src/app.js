@@ -72,6 +72,13 @@ function getVisibleRows() {
 }
 function avg(arr) { const v = arr.filter(x => x > 0); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : 0 }
 function sum(arr) { return arr.reduce((a,b)=>a+b,0) }
+function weightedPrice(rows) {
+  const kgRows = rows.filter(d => d.kilos > 0 && (d.base_iva > 0 || d.price > 0))
+  const kg = sum(kgRows.map(d => d.kilos))
+  if (!kg) return avg(rows.filter(d => d.price > 0).map(d => d.price))
+  const value = sum(kgRows.map(d => d.base_iva > 0 ? d.base_iva : d.price * d.kilos))
+  return value / kg
+}
 function maxValue(arr) {
   let max = -Infinity
   for (const value of arr) if (value > max) max = value
@@ -421,7 +428,6 @@ async function initApp() {
   isLoadingData = false
   populateAllSelects()
   renderDashboard()
-  renderHistoryView()
 
   const delBtn = document.querySelector('.btn-delete-all')
   if (delBtn) delBtn.onclick = deleteAllRecords
@@ -452,7 +458,7 @@ function rerenderCurrentPage() {
   const active = document.querySelector('.page.active')?.id
   if (!active) return
   populateAllSelects()
-  if (active === 'page-dashboard')    { renderDashboard(); renderHistoryView() }
+  if (active === 'page-dashboard')    renderDashboard()
   else if (active === 'page-ventas')  renderVentas()
   else if (active === 'page-productos') renderProductos()
   else if (active === 'page-clientes') renderClientes()
@@ -472,7 +478,7 @@ function navigate(page, btn) {
   if (btn) btn.classList.add('active')
   // Defer heavy render so the page switch is instant visually
   requestAnimationFrame(() => {
-    if (page === 'dashboard')    { renderDashboard(); renderHistoryView() }
+    if (page === 'dashboard')    renderDashboard()
     if (page === 'ventas')       { ventasPage = 0; renderVentas() }
     if (page === 'productos')    renderProductos()
     if (page === 'clientes')     { clienteSelected = null; renderClientes() }
@@ -504,7 +510,11 @@ function populateAllSelects() {
   if (cd) cd.innerHTML = cats.map(c => `<option value="${c}">`).join('')
 
   const dps = document.getElementById('dash-product-select')
-  if (dps) dps.innerHTML = products.map(p => `<option value="${p}">${p}</option>`).join('')
+  if (dps) {
+    const prev = dps.value
+    dps.innerHTML = `<option value="">Todas las naranjas</option>` + products.map(p => `<option value="${p}">${p}</option>`).join('')
+    if (prev && products.includes(prev)) dps.value = prev
+  }
 
   const dys = document.getElementById('dash-year-select')
   if (dys) {
@@ -586,41 +596,25 @@ function renderDashboard() {
 
   const latestCampaign = campaigns[campaigns.length - 1]
   const prevCampaign   = campaigns[campaigns.length - 2]
-  const latestPrices = sourceRows.filter(d => sameCampaign(d, latestCampaign) && d.price > 0).map(d => d.price)
-  const prevPrices   = sourceRows.filter(d => sameCampaign(d, prevCampaign)  && d.price > 0).map(d => d.price)
-  const avgLatest   = avg(latestPrices)
-  const avgPrev     = avg(prevPrices)
+  const latestRows = sourceRows.filter(d => sameCampaign(d, latestCampaign))
+  const prevRows = sourceRows.filter(d => sameCampaign(d, prevCampaign))
+  const avgLatest = weightedPrice(latestRows)
+  const avgPrev = weightedPrice(prevRows)
   const pctChange   = avgPrev ? ((avgLatest - avgPrev) / avgPrev) * 100 : 0
 
-  const totalRevenue = sum(sourceRows.map(d => d.base_iva))
-  const hasRevenue   = totalRevenue > 0
-  const totalKg      = sum(sourceRows.map(d => d.kilos))
-  const allPrices    = sourceRows.filter(d => d.price > 0).map(d => d.price)
+  const latestKg = sum(latestRows.map(d => d.kilos))
+  const latestClients = new Set(latestRows.map(getClientName).filter(Boolean)).size
+  const latestVarieties = new Set(latestRows.map(d => getLineClassification(d).variety).filter(Boolean)).size
 
   document.getElementById('dashboard-subtitle').textContent =
-    `Precios por kg de naranja desde 2015/16 · ${campaignLabel(campaigns[0])} a ${campaignLabel(latestCampaign)} · ${sourceRows.length.toLocaleString('es')} registros`
+    `Naranja por kg desde 2015/16 · ${campaignLabel(campaigns[0])} a ${campaignLabel(latestCampaign)} · ${sourceRows.length.toLocaleString('es')} líneas útiles`
 
-  let kpis
-  if (hasRevenue) {
-    const nClientes = new Set(sourceRows.map(getClientName).filter(Boolean)).size || getClientes().length
-    kpis = [
-      { label: 'Facturación total',      value: fmtEur(totalRevenue),   delta: `${campaignLabel(campaigns[0])}–${campaignLabel(latestCampaign)}`, flat: true },
-      { label: `Precio medio ${campaignLabel(latestCampaign)}`, value: fmtEur(avgLatest), delta: fmtPct(pctChange), up: pctChange > 0 },
-      { label: 'Kilos de naranja',          value: totalKg > 0 ? fmtKg(totalKg) : '—', delta: 'Total acumulado', flat: true },
-      { label: 'Clientes únicos',         value: String(nClientes), delta: 'Cartera activa', flat: true },
-    ]
-  } else {
-    const maxP   = allPrices.length ? maxValue(allPrices) : 0
-    const minP   = allPrices.length ? minValue(allPrices) : 0
-    const maxRec = sourceRows.find(d => d.price === maxP)
-    const minRec = sourceRows.find(d => d.price === minP)
-    kpis = [
-      { label: `Precio medio ${campaignLabel(latestCampaign)}`, value: `${fmt(avgLatest)} €`, delta: fmtPct(pctChange), up: pctChange > 0 },
-      { label: 'Total registros',  value: sourceRows.length.toLocaleString('es'), delta: `${campaigns.length} campañas`, flat: true },
-      { label: 'Precio máximo histórico', value: `${fmt(maxP)} €`, delta: maxRec ? `${maxRec.product} (${campaignLabel(getCampaignStart(maxRec))})` : '—', flat: true },
-      { label: 'Precio mínimo histórico', value: `${fmt(minP)} €`, delta: minRec ? `${minRec.product} (${campaignLabel(getCampaignStart(minRec))})` : '—', flat: true },
-    ]
-  }
+  const kpis = [
+    { label: `Precio medio ${campaignLabel(latestCampaign)}`, value: `${fmtEur(avgLatest)}/kg`, delta: avgPrev ? fmtPct(pctChange) : 'Sin campaña previa', up: pctChange >= 0 },
+    { label: 'Kilos campaña', value: latestKg > 0 ? fmtKg(latestKg) : '—', delta: campaignLabel(latestCampaign), flat: true },
+    { label: 'Clientes activos', value: String(latestClients || 0), delta: 'Con nombre agrupado', flat: true },
+    { label: 'Variedades', value: String(latestVarieties || 0), delta: 'En campaña actual', flat: true },
+  ]
 
   document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
     <div class="kpi-card">
@@ -637,14 +631,13 @@ function renderDashCharts() {
   const chartRows = getAnalysisRows()
   const selProduct = document.getElementById('dash-product-select')?.value
   const selCampaign = parseInt(document.getElementById('dash-year-select')?.value)
-  const campaigns   = getCampaigns(chartRows)
-  const colors     = getChartColors()
-  const hasRevenue = chartRows.some(d => d.base_iva > 0)
+  const campaigns = getCampaigns(chartRows)
+  const colors = getChartColors()
 
   destroyChart('annualChart')
   const annualData = campaigns.map(c => {
     const filtered = chartRows.filter(d => sameCampaign(d, c) && (!selProduct || d.product === selProduct))
-    return hasRevenue ? sum(filtered.map(d => d.base_iva)) : avg(filtered.filter(d=>d.price>0).map(d => d.price))
+    return weightedPrice(filtered)
   })
   const ctx1 = document.getElementById('annualChart')?.getContext('2d')
   if (ctx1) charts['annualChart'] = new Chart(ctx1, {
@@ -652,41 +645,42 @@ function renderDashCharts() {
     data: {
       labels: campaigns.map(campaignLabel),
       datasets: [{
-        label: selProduct || (hasRevenue ? 'Facturación' : 'Precio medio'),
+        label: selProduct || 'Precio medio ponderado',
         data: annualData,
         borderColor: '#01696f', backgroundColor: 'rgba(1,105,111,0.08)',
-        borderWidth: 2, tension: 0.35, fill: true, pointRadius: 4, pointBackgroundColor: '#01696f',
+        borderWidth: 2, tension: 0.28, fill: true, pointRadius: 3, pointBackgroundColor: '#01696f',
       }]
     },
     options: baseChartOptions(colors, '€')
   })
 
   destroyChart('categoryChart')
-  const cats = getCategories(chartRows)
-  const camp = selCampaign || (campaigns.length ? campaigns[campaigns.length-1] : getCampaignStart({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 }))
-  const catVals = cats.map(c => {
-    const rows = chartRows.filter(x => x.category === c && sameCampaign(x, camp))
-    return hasRevenue ? sum(rows.map(x => x.base_iva)) : avg(rows.filter(x=>x.price>0).map(x => x.price))
+  const camp = selCampaign || (campaigns.length ? campaigns[campaigns.length - 1] : getCampaignStart({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 }))
+  const campRows = chartRows.filter(x => sameCampaign(x, camp) && (!selProduct || x.product === selProduct))
+  const varietyMap = {}
+  campRows.forEach(row => {
+    const cls = getLineClassification(row)
+    const key = cls.variety || 'Sin variedad'
+    if (!varietyMap[key]) varietyMap[key] = []
+    varietyMap[key].push(row)
   })
+  const varietyRows = Object.entries(varietyMap)
+    .map(([name, rows]) => ({ name, price: weightedPrice(rows), kg: sum(rows.map(r => r.kilos)), rows: rows.length }))
+    .filter(v => v.price > 0)
+    .sort((a,b) => b.kg - a.kg || b.rows - a.rows)
+    .slice(0, 8)
   const ctx2 = document.getElementById('categoryChart')?.getContext('2d')
   if (ctx2) charts['categoryChart'] = new Chart(ctx2, {
-    type: 'doughnut',
-    data: { labels: cats, datasets: [{ data: catVals, backgroundColor: CHART_COLORS.slice(0, cats.length), borderWidth: 2, borderColor: colors.bg }] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'right', labels: { color: colors.tick, font:{ size:11 }, boxWidth:12 } },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${hasRevenue ? fmtEur(ctx.raw) : fmt(ctx.raw)+' €'}` } }
-      }
-    }
+    type: 'bar',
+    data: { labels: varietyRows.map(v => v.name), datasets: [{ label: 'Precio/kg', data: varietyRows.map(v => v.price), backgroundColor: 'rgba(1,105,111,0.65)', borderRadius: 5, borderSkipped: false }] },
+    options: { ...baseChartOptions(colors, '€'), indexAxis: 'y' }
   })
 
   destroyChart('monthlyChart')
-  const camp2 = selCampaign || (campaigns.length ? campaigns[campaigns.length-1] : camp)
   const monthlyData = Array.from({length:12}, (_,i) => {
     const m = i < 3 ? i + 10 : i - 2
-    const filtered = chartRows.filter(d => sameCampaign(d, camp2) && d.month === m && (!selProduct || d.product === selProduct))
-    return hasRevenue ? sum(filtered.map(d => d.base_iva)) : avg(filtered.filter(d=>d.price>0).map(d => d.price))
+    const filtered = chartRows.filter(d => sameCampaign(d, camp) && d.month === m && (!selProduct || d.product === selProduct))
+    return weightedPrice(filtered)
   })
   const ctx3 = document.getElementById('monthlyChart')?.getContext('2d')
   if (ctx3) charts['monthlyChart'] = new Chart(ctx3, {
@@ -694,7 +688,7 @@ function renderDashCharts() {
     data: {
       labels: CAMPAIGN_MONTHS,
       datasets: [{
-        label: `${selProduct || (hasRevenue ? 'Facturación' : 'Media')} ${campaignLabel(camp2)}`,
+        label: `${selProduct || 'Precio medio'} ${campaignLabel(camp)}`,
         data: monthlyData,
         backgroundColor: monthlyData.map(v => v > 0 && v === maxValue(monthlyData.filter(Boolean)) ? '#da7101' : 'rgba(1,105,111,0.65)'),
         borderRadius: 5, borderSkipped: false,
@@ -702,6 +696,26 @@ function renderDashCharts() {
     },
     options: baseChartOptions(colors, '€')
   })
+
+  const insights = document.getElementById('dashboard-insights')
+  if (insights) {
+    const lastMonth = monthlyData.map((v, i) => ({ v, i })).filter(x => x.v > 0).at(-1)
+    const bestVariety = varietyRows[0]
+    const validAnnual = annualData.filter(v => v > 0)
+    const maxAnnual = validAnnual.length ? maxValue(validAnnual) : 0
+    const minAnnual = validAnnual.length ? minValue(validAnnual) : 0
+    insights.innerHTML = [
+      { title: 'Último mes con precio', meta: lastMonth ? `${CAMPAIGN_MONTHS[lastMonth.i]} · ${campaignLabel(camp)}` : 'Sin datos mensuales', value: lastMonth ? `${fmtEur(lastMonth.v)}/kg` : '—' },
+      { title: 'Variedad con más volumen', meta: bestVariety ? fmtKg(bestVariety.kg) : 'Sin volumen', value: bestVariety ? bestVariety.name : '—' },
+      { title: 'Rango histórico', meta: `${campaigns.length} campañas comparables`, value: validAnnual.length ? `${fmtEur(minAnnual)} - ${fmtEur(maxAnnual)}` : '—' },
+      { title: 'Campaña analizada', meta: `${campRows.length.toLocaleString('es')} líneas`, value: campaignLabel(camp) },
+    ].map(item => `
+      <div class="insight-row">
+        <div><div class="insight-title">${item.title}</div><div class="insight-meta">${item.meta}</div></div>
+        <div class="insight-value">${item.value}</div>
+      </div>
+    `).join('')
+  }
 }
 window.renderDashCharts = renderDashCharts
 
