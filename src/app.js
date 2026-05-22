@@ -21,6 +21,9 @@ const MONTHS      = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct'
 const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const CHART_COLORS = ['#01696f','#006494','#437a22','#d19900','#da7101','#a12c7b','#964219','#5591c7','#2d8650','#8b5cf6']
 const MIN_CAMPAIGN_START = 2015
+const CLIENT_GROUP_RULES = [
+  { label: 'COFRULY S.A.', match: /\bCOFRULY\b/ },
+]
 
 // =========== UTILITIES ===========
 function getUnique(field, rows = getVisibleRows()) { return [...new Set(rows.map(d => d[field]).filter(Boolean))].sort() }
@@ -34,13 +37,30 @@ const CAMPAIGN_MONTHS = ['Oct','Nov','Dic','Ene','Feb','Mar','Abr','May','Jun','
 function getProducts(rows = getVisibleRows()) { return getUnique('product', rows.filter(d => isReadableProductName(d.product))) }
 function getCategories(rows = getVisibleRows()) { return getUnique('category', rows) }
 function getClientes(rows = getVisibleRows()) { return [...new Set(rows.map(getClientName).filter(Boolean))].sort() }
-function getClientName(d) {
+function getRawClientName(d) {
   const code = String(d.cliente || '').trim()
   const name = String(d.denominacion_social || '').trim()
   return name && name !== code ? name : ''
 }
+function normalizeClientText(value) {
+  return normalizeText(value)
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .replace(/\b(SOCIEDAD|ANONIMA|LIMITADA|SL|S L|SA|S A|SAS|SARL|BV|NV|LTD|GMBH|INC|CO|COMPANY|THE)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+function getClientName(d) {
+  const rawName = getRawClientName(d)
+  if (!rawName) return ''
+  const searchable = normalizeClientText(`${rawName} ${d.cliente || ''}`)
+  const group = CLIENT_GROUP_RULES.find(rule => rule.match.test(searchable))
+  return group ? group.label : rawName
+}
 function getClientLabel(d) { return getClientName(d) || d.cliente || '—' }
-function hasNamedClient(d) { return !!getClientName(d) }
+function getClientSearchText(d) {
+  return [getClientName(d), getRawClientName(d), d.denominacion_social, d.cliente].filter(Boolean).join(' ')
+}
+function hasNamedClient(d) { return !!getRawClientName(d) }
 function isInConfiguredCampaignRange(d) { return getCampaignStart(d) >= MIN_CAMPAIGN_START }
 function isVisibleRow(d) { return isInConfiguredCampaignRange(d) && hasNamedClient(d) && isReadableProductName(d.product) }
 function clearDerivedCaches() {
@@ -151,8 +171,16 @@ function extractFormat(text) {
     { re: /CLIP\s*TO\s*CLIP|\bC2C\b/, label: 'Clip to clip' },
     { re: /BOX/, label: 'Box' }
   ], '')
+  return presentation || 'Sin formato'
+}
+
+function extractFormatDetail(text) {
   const weight = extractWeight(text)
-  return [presentation || 'Sin formato', weight].filter(Boolean).join(' · ')
+  const container = extractContainer(text)
+  const parts = []
+  if (weight) parts.push(weight)
+  if (container !== 'Sin envase') parts.push(container)
+  return parts.join(' · ')
 }
 
 function extractContainer(text) {
@@ -263,16 +291,19 @@ function getLineClassification(row) {
   const caliber = extractCaliber(text)
   const quality = extractQuality(text)
   const format = extractFormat(text)
+  const formatDetail = extractFormatDetail(text)
   const container = extractContainer(text)
   const brand = extractBrand(text)
   const packaging = format === 'Sin formato' ? '' : format
   const subParts = [variety]
   if (caliber !== 'Sin calibre') subParts.push(caliber)
   if (format !== 'Sin formato') subParts.push(format)
-  if (container !== 'Sin envase') subParts.push(container)
+  if (formatDetail) subParts.push(formatDetail)
+  if (quality !== 'Categoria I / sin indicar') subParts.push(quality)
+  if (brand) subParts.push(brand)
   const subproduct = subParts.filter(Boolean).join(' · ')
 
-  const result = { type, product, citrusType, variety, caliber, quality, format, packaging, container, brand, subproduct }
+  const result = { type, product, citrusType, variety, caliber, quality, format, formatDetail, packaging, container, brand, subproduct }
   row._cls = result
   return result
 }
@@ -318,7 +349,7 @@ function getScopedClassOptions(scope) {
 }
 
 function getClassificationPath(cls) {
-  return [cls.type, cls.product, cls.variety, cls.caliber, cls.format]
+  return [cls.type, cls.product, cls.variety, cls.caliber, cls.format, cls.formatDetail]
     .filter(v => v && !/^Sin /.test(v) && v !== 'Categoria I / sin indicar')
     .join(' - ')
 }
@@ -781,7 +812,7 @@ function getVentasFiltered() {
     const cls = getLineClassification(d)
     if (campaign && !sameCampaign(d, campaign)) return false
     if (month && d.month !== month) return false
-    if (cli   && !`${getClientLabel(d)} ${d.cliente || ''}`.toLowerCase().includes(cli)) return false
+    if (cli   && !getClientSearchText(d).toLowerCase().includes(cli)) return false
     if (type && cls.type !== type) return false
     if (base && cls.product !== base) return false
     if (subproduct && cls.subproduct !== subproduct) return false
@@ -830,7 +861,7 @@ function renderVentas() {
         <td class="td-date">${campaignLabel(getCampaignStart(d))}${d.month ? ' · '+ MONTHS[d.month-1] : ''}</td>
         <td class="td-doc">${d.documento || '—'}</td>
         <td class="td-client" title="${nombre}">${nombre.length>28?nombre.slice(0,28)+'…':nombre}</td>
-        <td class="td-product" title="${d.product}"><strong>${cls.variety}</strong><br><span style="color:var(--color-text-muted)">${cls.caliber} · ${cls.format}</span><br><span style="color:var(--color-text-muted)">${cls.type} · ${cls.product}</span></td>
+        <td class="td-product" title="${d.product}"><strong>${cls.variety}</strong><br><span style="color:var(--color-text-muted)">${[cls.caliber, cls.format, cls.formatDetail].filter(v => v && !/^Sin /.test(v)).join(' · ')}</span><br><span style="color:var(--color-text-muted)">${cls.type} · ${cls.product}</span></td>
         <td class="td-ref">${d.referencia || '—'}</td>
         <td class="td-num">${d.kilos > 0 ? fmtKg(d.kilos) : d.unidades > 0 ? fmtNum(d.unidades)+' ud' : '—'}</td>
         <td class="td-num">${d.price > 0 ? fmtEur(d.price) : '—'}</td>
@@ -1001,10 +1032,12 @@ function renderClientes() {
 
   const clientMap = {}
   clientRows.forEach(d => {
-    const code = d.cliente || ''
     const name = getClientName(d)
-    const key  = code || name
-    if (!clientMap[key]) clientMap[key] = { code, name, rev:0, kg:0, n:0, years:new Set(), lastYear:0 }
+    const key  = name
+    if (!clientMap[key]) clientMap[key] = { code:'', name, rev:0, kg:0, n:0, years:new Set(), lastYear:0, codes:new Set(), aliases:new Set() }
+    if (d.cliente) clientMap[key].codes.add(d.cliente)
+    const rawName = getRawClientName(d)
+    if (rawName && rawName !== name) clientMap[key].aliases.add(rawName)
     clientMap[key].rev += d.base_iva
     clientMap[key].kg  += d.kilos
     clientMap[key].n   += 1
@@ -1012,7 +1045,11 @@ function renderClientes() {
     if (d.year > clientMap[key].lastYear) clientMap[key].lastYear = d.year
   })
 
-  const clients = Object.values(clientMap).sort((a,b) => b.rev - a.rev || b.kg - a.kg)
+  const clients = Object.values(clientMap).map(c => ({
+    ...c,
+    code: [...c.codes].filter(Boolean).slice(0, 4).join(', '),
+    aliasText: [...c.aliases].filter(Boolean).slice(0, 6).join(' · ')
+  })).sort((a,b) => b.rev - a.rev || b.kg - a.kg)
   const totRev  = sum(clients.map(c=>c.rev))
   const totKg   = sum(clients.map(c=>c.kg))
 
@@ -1040,8 +1077,8 @@ function renderClientes() {
     : `<th>Nombre cliente</th><th>Código</th>${hasKg?'<th>KG totales</th>':''}<th>Registros</th><th>Último año</th><th></th>`
 
   const rows = clients.map(c => `
-    <tr class="cli-row" onclick="selectCliente('${(c.code||c.name).replace(/'/g,"\\'")}')">
-      <td><strong>${c.name}</strong></td>
+    <tr class="cli-row" onclick="selectCliente('${c.name.replace(/'/g,"\\'")}')">
+      <td><strong>${c.name}</strong>${c.aliasText ? `<br><span style="color:var(--color-text-muted);font-size:var(--text-xs)">${c.aliasText}</span>` : ''}</td>
       <td><code style="font-size:0.8em;color:var(--color-text-muted)">${c.code||'—'}</code></td>
       ${hasRev ? `<td class="td-total">${fmtEur(c.rev)}</td>` : ''}
       ${hasKg  ? `<td class="td-num">${fmtKg(c.kg)}</td>` : ''}
@@ -1069,10 +1106,10 @@ function backToClientes() { clienteSelected = null; renderClientes() }
 window.backToClientes = backToClientes
 
 function renderClienteDetail(key) {
-  const cliData = getVisibleRows().filter(d => d.cliente === key || d.denominacion_social === key || getClientName(d) === key)
+  const cliData = getVisibleRows().filter(d => getClientName(d) === key || getRawClientName(d) === key || d.cliente === key)
   if (!cliData.length) { backToClientes(); return }
 
-  const name   = cliData[0].denominacion_social || cliData[0].cliente || key
+  const name   = key
   const rev    = sum(cliData.map(d=>d.base_iva))
   const kg     = sum(cliData.map(d=>d.kilos))
   const years  = [...new Set(cliData.map(d=>d.year))].sort()
@@ -1577,7 +1614,7 @@ function renderTable() {
   let rows = getVisibleRows().filter(d => {
     const cls = getLineClassification(d)
     let ok = true
-    if (search) ok = ok && (d.product.toLowerCase().includes(search) || d.category.toLowerCase().includes(search) || (d.denominacion_social||'').toLowerCase().includes(search))
+    if (search) ok = ok && (d.product.toLowerCase().includes(search) || d.category.toLowerCase().includes(search) || getClientSearchText(d).toLowerCase().includes(search))
     if (campaignF) ok = ok && sameCampaign(d, campaignF)
     if (catF)  ok = ok && d.category === catF
     if (typeF) ok = ok && cls.type === typeF
