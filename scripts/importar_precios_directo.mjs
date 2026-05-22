@@ -270,14 +270,14 @@ function collectFiles(inputPaths) {
   return files
 }
 
-async function insertRows(rows, doneStart, total) {
+async function insertRows(rows, doneStart) {
   let done = doneStart
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     const chunk = rows.slice(i, i + INSERT_CHUNK)
     const { error } = await supabase.from(TABLE).insert(chunk, { returning: 'minimal' })
     if (error) throw error
     done += chunk.length
-    console.log(`Insertadas ${done.toLocaleString('es-ES')}/${total.toLocaleString('es-ES')}`)
+    console.log(`Insertadas ${done.toLocaleString('es-ES')} acumuladas`)
   }
   return done
 }
@@ -323,13 +323,13 @@ async function main() {
       existing.add(key)
       pending.push(record)
       if (pending.length >= INSERT_CHUNK * 10) {
-        inserted = await insertRows(pending, inserted, validRows)
+        inserted = await insertRows(pending, inserted)
         pending = []
       }
     }
   }
 
-  if (pending.length) inserted = await insertRows(pending, inserted, validRows)
+  if (pending.length) inserted = await insertRows(pending, inserted)
   console.log(`\nCompletado.`)
   console.log(`Filas leidas: ${totalRows.toLocaleString('es-ES')}`)
   console.log(`Validas: ${validRows.toLocaleString('es-ES')}`)

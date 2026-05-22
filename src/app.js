@@ -3,6 +3,7 @@ import {
   updateRecords as dbUpdateRecords, deleteRecord as dbDeleteRecord,
   deleteAllRecords as dbDeleteAllRecords, subscribeToChanges, normalizeRow
 } from './database.js'
+import { debounce } from './utils.js'
 
 // =========== GLOBALS ===========
 let data = []
@@ -14,30 +15,41 @@ let clienteSelected = null
 let toastTimer = null
 let bulkDeleting = false
 let isLoadingData = false
-const classificationCache = new Map()
+let visibleRowsCache = null
 
 const MONTHS      = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const CHART_COLORS = ['#01696f','#006494','#437a22','#d19900','#da7101','#a12c7b','#964219','#5591c7','#2d8650','#8b5cf6']
+const MIN_CAMPAIGN_START = 2015
 
 // =========== UTILITIES ===========
-function getUnique(field, rows = data) { return [...new Set(rows.map(d => d[field]).filter(Boolean))].sort() }
-function getYears(rows = data) { return [...new Set(rows.map(d => d.year))].map(Number).sort() }
+function getUnique(field, rows = getVisibleRows()) { return [...new Set(rows.map(d => d[field]).filter(Boolean))].sort() }
+function getYears(rows = getVisibleRows()) { return [...new Set(rows.map(d => d.year))].map(Number).sort() }
 function getCampaignStart(d) { return d.month && d.month >= 10 ? d.year : d.year - 1 }
-function getCampaigns(rows = data) { return [...new Set(rows.map(getCampaignStart))].map(Number).sort() }
+function getCampaigns(rows = getVisibleRows()) { return [...new Set(rows.map(getCampaignStart))].map(Number).sort() }
 function campaignLabel(c) { return `${c}/${String((c + 1) % 100).padStart(2, '0')}` }
 function sameCampaign(d, c) { return getCampaignStart(d) === Number(c) }
 function campaignMonthIndex(d) { return d.month ? (d.month + 2) % 12 : 0 }
 const CAMPAIGN_MONTHS = ['Oct','Nov','Dic','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep']
-function getProducts(rows = data) { return getUnique('product', rows.filter(d => isReadableProductName(d.product))) }
-function getCategories(rows = data) { return getUnique('category', rows) }
-function getClientes() { return [...new Set(data.map(getClientLabel).filter(v => v && v !== '—'))].sort() }
+function getProducts(rows = getVisibleRows()) { return getUnique('product', rows.filter(d => isReadableProductName(d.product))) }
+function getCategories(rows = getVisibleRows()) { return getUnique('category', rows) }
+function getClientes(rows = getVisibleRows()) { return [...new Set(rows.map(getClientName).filter(Boolean))].sort() }
 function getClientName(d) {
   const code = String(d.cliente || '').trim()
   const name = String(d.denominacion_social || '').trim()
   return name && name !== code ? name : ''
 }
 function getClientLabel(d) { return getClientName(d) || d.cliente || '—' }
+function hasNamedClient(d) { return !!getClientName(d) }
+function isInConfiguredCampaignRange(d) { return getCampaignStart(d) >= MIN_CAMPAIGN_START }
+function isVisibleRow(d) { return isInConfiguredCampaignRange(d) && hasNamedClient(d) && isReadableProductName(d.product) }
+function clearDerivedCaches() {
+  visibleRowsCache = null
+}
+function getVisibleRows() {
+  if (!visibleRowsCache) visibleRowsCache = data.filter(isVisibleRow)
+  return visibleRowsCache
+}
 function avg(arr) { const v = arr.filter(x => x > 0); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : 0 }
 function sum(arr) { return arr.reduce((a,b)=>a+b,0) }
 function maxValue(arr) {
@@ -97,13 +109,18 @@ function hasEconomicValue(d) {
 }
 
 function isMainOrangePriceRow(d) {
-  if (!isReadableProductName(d.product) || !hasEconomicValue(d)) return false
+  if (!isVisibleRow(d) || !hasEconomicValue(d)) return false
   const cls = getLineClassification(d)
   return cls.type === 'Producto' && cls.product === 'Naranja' && d.price > 0 && d.kilos > 0
 }
 
 function getMainOrangePriceRows() {
   return data.filter(isMainOrangePriceRow)
+}
+
+function getAnalysisRows() {
+  const orangeRows = getMainOrangePriceRows()
+  return orangeRows.length ? orangeRows : getVisibleRows().filter(hasEconomicValue)
 }
 
 function firstMatch(text, rules, fallback = '') {
@@ -169,10 +186,9 @@ function extractBrand(text) {
 }
 
 function getLineClassification(row) {
-  const raw = row?.product || ''
-  const cacheKey = String(row?.id || '') + '|' + raw
-  if (classificationCache.has(cacheKey)) return classificationCache.get(cacheKey)
+  if (row._cls) return row._cls
 
+  const raw = row?.product || ''
   const text = normalizeText(raw)
   let type = 'Producto'
   let product = 'Otros productos'
@@ -257,16 +273,23 @@ function getLineClassification(row) {
   const subproduct = subParts.filter(Boolean).join(' · ')
 
   const result = { type, product, citrusType, variety, caliber, quality, format, packaging, container, brand, subproduct }
-  classificationCache.set(cacheKey, result)
+  row._cls = result
   return result
 }
 
-function getClassValues(field, filter = {}) {
-  return [...new Set(data
+function classMatchesFilter(cls, filter = {}) {
+  return (!filter.type || cls.type === filter.type)
+    && (!filter.product || cls.product === filter.product)
+    && (!filter.variety || cls.variety === filter.variety)
+    && (!filter.caliber || cls.caliber === filter.caliber)
+    && (!filter.format || cls.format === filter.format)
+    && (!filter.subproduct || cls.subproduct === filter.subproduct)
+}
+
+function getClassValues(field, filter = {}, rows = getVisibleRows()) {
+  return [...new Set(rows
     .map(d => getLineClassification(d))
-    .filter(cls => !filter.type || cls.type === filter.type)
-    .filter(cls => !filter.product || cls.product === filter.product)
-    .filter(cls => !filter.variety || cls.variety === filter.variety)
+    .filter(cls => classMatchesFilter(cls, filter))
     .map(cls => cls[field])
     .filter(Boolean)
   )].sort()
@@ -278,6 +301,27 @@ function getSubproducts(base = '') { return getClassValues('subproduct', { produ
 function getVarieties(base = '') { return getClassValues('variety', { product: base }) }
 function getCalibers(base = '', variety = '') { return getClassValues('caliber', { product: base, variety }) }
 function getFormats(base = '') { return getClassValues('format', { product: base }) }
+
+function getScopedClassOptions(scope) {
+  const type = document.getElementById(`${scope}-type`)?.value || ''
+  const product = document.getElementById(`${scope}-base`)?.value || ''
+  const variety = document.getElementById(`${scope}-variety`)?.value || ''
+  const caliber = document.getElementById(`${scope}-caliber`)?.value || ''
+  const format = document.getElementById(`${scope}-format`)?.value || ''
+  const rows = getVisibleRows()
+  return {
+    varieties: getClassValues('variety', { type, product }, rows),
+    calibers: getClassValues('caliber', { type, product, variety }, rows),
+    formats: getClassValues('format', { type, product, variety, caliber }, rows),
+    subproducts: getClassValues('subproduct', { type, product, variety, caliber, format }, rows),
+  }
+}
+
+function getClassificationPath(cls) {
+  return [cls.type, cls.product, cls.variety, cls.caliber, cls.format]
+    .filter(v => v && !/^Sin /.test(v) && v !== 'Categoria I / sin indicar')
+    .join(' - ')
+}
 
 function getChartColors() {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark'
@@ -331,11 +375,14 @@ function baseChartOptions(colors, unit = '€') {
 }
 
 // =========== INIT ===========
+const debouncedReRender = debounce(rerenderCurrentPage, 250)
+
 async function initApp() {
   isLoadingData = true
   renderLoadingState()
   try {
     data = await fetchAllRecords(count => renderLoadingState(count))
+    data.forEach(d => getLineClassification(d))
   } catch(e) {
     console.error(e)
     showToast('⚠ Error al cargar datos de Supabase', 'error')
@@ -352,15 +399,23 @@ async function initApp() {
     if (bulkDeleting) return
     const eventType = payload.eventType || payload.event_type
     const { new: nr, old: or } = payload
-    if (eventType === 'INSERT' && nr)  { data.push(normalizeRow(nr)); showToast(`✓ Nuevo: ${nr.producto}`) }
-    else if (eventType === 'DELETE' && or) data = data.filter(d => d.id !== or.id)
+    if (eventType === 'INSERT' && nr)  { data.push(normalizeRow(nr)); clearDerivedCaches(); showToast(`✓ Nuevo: ${nr.producto}`) }
+    else if (eventType === 'DELETE' && or) { data = data.filter(d => d.id !== or.id); clearDerivedCaches() }
     else if (eventType === 'UPDATE' && nr) {
       const i = data.findIndex(d => d.id === nr.id)
-      if (i !== -1) data[i] = normalizeRow(nr)
+      if (i !== -1) { data[i] = normalizeRow(nr); clearDerivedCaches() }
     }
-    rerenderCurrentPage()
+    debouncedReRender()
   })
 }
+
+const debouncedRenderVentas = debounce(() => { ventasPage = 0; renderVentas() }, 200)
+const debouncedRenderTable = debounce(renderTable, 200)
+const debouncedHistorySearch = debounce(renderHistoryView, 200)
+
+window.debouncedRenderVentas = debouncedRenderVentas
+window.debouncedRenderTable = debouncedRenderTable
+window.debouncedHistorySearch = debouncedHistorySearch
 
 function rerenderCurrentPage() {
   const active = document.querySelector('.page.active')?.id
@@ -403,10 +458,11 @@ window.navigate = navigate
 // =========== POPULATE SELECTS ===========
 function populateAllSelects() {
   const mainRows = getMainOrangePriceRows()
-  const years    = getYears(mainRows.length ? mainRows : data)
-  const campaigns = getCampaigns(mainRows.length ? mainRows : data)
-  const products = getProducts(mainRows.length ? mainRows : data)
-  const cats     = getCategories(mainRows.length ? mainRows : data)
+  const selectRows = mainRows.length ? mainRows : getVisibleRows()
+  const years    = getYears(selectRows)
+  const campaigns = getCampaigns(selectRows)
+  const products = getProducts(selectRows)
+  const cats     = getCategories(selectRows)
   const clientes = getClientes()
   const invoiceTypes = getInvoiceTypes()
   const productBases = getProductBases()
@@ -454,7 +510,10 @@ function populateAllSelects() {
     const prev = el.value
     el.innerHTML = `<option value="">${allLabel}</option>` + items.map(i => `<option value="${i}">${labelFn(i)}</option>`).join('')
     if (items.includes(prev) || items.map(String).includes(prev)) el.value = prev
-    else if (defaultValue && (items.includes(defaultValue) || items.map(String).includes(defaultValue))) el.value = defaultValue
+    else if (defaultValue && !el.dataset.defaulted && (items.includes(defaultValue) || items.map(String).includes(defaultValue))) {
+      el.value = defaultValue
+      el.dataset.defaulted = '1'
+    }
   }
   setOpts('ventas-type', invoiceTypes, 'Todos los tipos')
   setOpts('table-type', invoiceTypes, 'Todos los tipos', i => i, 'Producto')
@@ -463,12 +522,11 @@ function populateAllSelects() {
   setOpts('table-base', productBases, 'Todos los productos', i => i, 'Naranja')
   setOpts('product-base', productBases, 'Todos los productos', i => i, 'Naranja')
   ;['ventas','table','product'].forEach(scope => {
-    const base = document.getElementById(`${scope}-base`)?.value || ''
-    setOpts(`${scope}-variety`, getVarieties(base), 'Todas las variedades')
-    const variety = document.getElementById(`${scope}-variety`)?.value || ''
-    setOpts(`${scope}-caliber`, getCalibers(base, variety), 'Todos los calibres')
-    setOpts(`${scope}-format`, getFormats(base), 'Todos los formatos')
-    setOpts(`${scope}-subproduct`, getSubproducts(base), 'Todos los subproductos')
+    const opts = getScopedClassOptions(scope)
+    setOpts(`${scope}-variety`, opts.varieties, 'Todas las variedades')
+    setOpts(`${scope}-caliber`, opts.calibers, 'Todos los calibres')
+    setOpts(`${scope}-format`, opts.formats, 'Todos los formatos')
+    setOpts(`${scope}-subproduct`, opts.subproducts, 'Todos los subproductos')
   })
   setOpts('ventas-year',    campaigns,    'Todas las campañas', campaignLabel)
   setOpts('ventas-cliente', clientes, 'Todos los clientes')
@@ -488,7 +546,8 @@ function renderDashboard() {
     renderLoadingState(data.length)
     return
   }
-  const campaigns = getCampaigns()
+  const sourceRows = getAnalysisRows()
+  const campaigns = getCampaigns(sourceRows)
   if (!campaigns.length) {
     document.getElementById('kpi-grid').innerHTML = '<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Sin datos</div><div class="kpi-value" style="font-size:var(--text-base)">Importa registros para comenzar</div></div>'
     return
@@ -496,37 +555,37 @@ function renderDashboard() {
 
   const latestCampaign = campaigns[campaigns.length - 1]
   const prevCampaign   = campaigns[campaigns.length - 2]
-  const latestPrices = data.filter(d => sameCampaign(d, latestCampaign) && d.price > 0).map(d => d.price)
-  const prevPrices   = data.filter(d => sameCampaign(d, prevCampaign)  && d.price > 0).map(d => d.price)
+  const latestPrices = sourceRows.filter(d => sameCampaign(d, latestCampaign) && d.price > 0).map(d => d.price)
+  const prevPrices   = sourceRows.filter(d => sameCampaign(d, prevCampaign)  && d.price > 0).map(d => d.price)
   const avgLatest   = avg(latestPrices)
   const avgPrev     = avg(prevPrices)
   const pctChange   = avgPrev ? ((avgLatest - avgPrev) / avgPrev) * 100 : 0
 
-  const totalRevenue = sum(data.map(d => d.base_iva))
+  const totalRevenue = sum(sourceRows.map(d => d.base_iva))
   const hasRevenue   = totalRevenue > 0
-  const totalKg      = sum(data.map(d => d.kilos))
-  const allPrices    = data.filter(d => d.price > 0).map(d => d.price)
+  const totalKg      = sum(sourceRows.map(d => d.kilos))
+  const allPrices    = sourceRows.filter(d => d.price > 0).map(d => d.price)
 
   document.getElementById('dashboard-subtitle').textContent =
-    `Datos de campaña ${campaignLabel(campaigns[0])} a ${campaignLabel(latestCampaign)} · ${data.length.toLocaleString('es')} registros`
+    `Precios por kg de naranja desde 2015/16 · ${campaignLabel(campaigns[0])} a ${campaignLabel(latestCampaign)} · ${sourceRows.length.toLocaleString('es')} registros`
 
   let kpis
   if (hasRevenue) {
-    const nClientes = new Set(data.map(d => d.cliente).filter(Boolean)).size || getClientes().length
+    const nClientes = new Set(sourceRows.map(getClientName).filter(Boolean)).size || getClientes().length
     kpis = [
       { label: 'Facturación total',      value: fmtEur(totalRevenue),   delta: `${campaignLabel(campaigns[0])}–${campaignLabel(latestCampaign)}`, flat: true },
       { label: `Precio medio ${campaignLabel(latestCampaign)}`, value: fmtEur(avgLatest), delta: fmtPct(pctChange), up: pctChange > 0 },
-      { label: 'Kilos vendidos',          value: totalKg > 0 ? fmtKg(totalKg) : '—', delta: 'Total acumulado', flat: true },
+      { label: 'Kilos de naranja',          value: totalKg > 0 ? fmtKg(totalKg) : '—', delta: 'Total acumulado', flat: true },
       { label: 'Clientes únicos',         value: String(nClientes), delta: 'Cartera activa', flat: true },
     ]
   } else {
     const maxP   = allPrices.length ? maxValue(allPrices) : 0
     const minP   = allPrices.length ? minValue(allPrices) : 0
-    const maxRec = data.find(d => d.price === maxP)
-    const minRec = data.find(d => d.price === minP)
+    const maxRec = sourceRows.find(d => d.price === maxP)
+    const minRec = sourceRows.find(d => d.price === minP)
     kpis = [
       { label: `Precio medio ${campaignLabel(latestCampaign)}`, value: `${fmt(avgLatest)} €`, delta: fmtPct(pctChange), up: pctChange > 0 },
-      { label: 'Total registros',  value: data.length.toLocaleString('es'), delta: `${campaigns.length} campañas`, flat: true },
+      { label: 'Total registros',  value: sourceRows.length.toLocaleString('es'), delta: `${campaigns.length} campañas`, flat: true },
       { label: 'Precio máximo histórico', value: `${fmt(maxP)} €`, delta: maxRec ? `${maxRec.product} (${campaignLabel(getCampaignStart(maxRec))})` : '—', flat: true },
       { label: 'Precio mínimo histórico', value: `${fmt(minP)} €`, delta: minRec ? `${minRec.product} (${campaignLabel(getCampaignStart(minRec))})` : '—', flat: true },
     ]
@@ -544,15 +603,16 @@ function renderDashboard() {
 }
 
 function renderDashCharts() {
+  const chartRows = getAnalysisRows()
   const selProduct = document.getElementById('dash-product-select')?.value
   const selCampaign = parseInt(document.getElementById('dash-year-select')?.value)
-  const campaigns   = getCampaigns()
+  const campaigns   = getCampaigns(chartRows)
   const colors     = getChartColors()
-  const hasRevenue = data.some(d => d.base_iva > 0)
+  const hasRevenue = chartRows.some(d => d.base_iva > 0)
 
   destroyChart('annualChart')
   const annualData = campaigns.map(c => {
-    const filtered = data.filter(d => sameCampaign(d, c) && (!selProduct || d.product === selProduct))
+    const filtered = chartRows.filter(d => sameCampaign(d, c) && (!selProduct || d.product === selProduct))
     return hasRevenue ? sum(filtered.map(d => d.base_iva)) : avg(filtered.filter(d=>d.price>0).map(d => d.price))
   })
   const ctx1 = document.getElementById('annualChart')?.getContext('2d')
@@ -571,10 +631,10 @@ function renderDashCharts() {
   })
 
   destroyChart('categoryChart')
-  const cats = getCategories()
+  const cats = getCategories(chartRows)
   const camp = selCampaign || (campaigns.length ? campaigns[campaigns.length-1] : getCampaignStart({ year: new Date().getFullYear(), month: new Date().getMonth() + 1 }))
   const catVals = cats.map(c => {
-    const rows = data.filter(x => x.category === c && sameCampaign(x, camp))
+    const rows = chartRows.filter(x => x.category === c && sameCampaign(x, camp))
     return hasRevenue ? sum(rows.map(x => x.base_iva)) : avg(rows.filter(x=>x.price>0).map(x => x.price))
   })
   const ctx2 = document.getElementById('categoryChart')?.getContext('2d')
@@ -594,7 +654,7 @@ function renderDashCharts() {
   const camp2 = selCampaign || (campaigns.length ? campaigns[campaigns.length-1] : camp)
   const monthlyData = Array.from({length:12}, (_,i) => {
     const m = i < 3 ? i + 10 : i - 2
-    const filtered = data.filter(d => sameCampaign(d, camp2) && d.month === m && (!selProduct || d.product === selProduct))
+    const filtered = chartRows.filter(d => sameCampaign(d, camp2) && d.month === m && (!selProduct || d.product === selProduct))
     return hasRevenue ? sum(filtered.map(d => d.base_iva)) : avg(filtered.filter(d=>d.price>0).map(d => d.price))
   })
   const ctx3 = document.getElementById('monthlyChart')?.getContext('2d')
@@ -619,7 +679,7 @@ function getHistoryFiltered() {
   const q    = (document.getElementById('history-search')?.value || '').toLowerCase()
   const campaign = parseInt(document.getElementById('history-year')?.value || '') || null
   const cat  = document.getElementById('history-category')?.value || ''
-  let rows = data.filter(r => {
+  let rows = getAnalysisRows().filter(r => {
     let ok = true
     if (q)    ok = ok && r.product.toLowerCase().includes(q)
     if (campaign) ok = ok && sameCampaign(r, campaign)
@@ -717,7 +777,7 @@ function getVentasFiltered() {
   const caliber = document.getElementById('ventas-caliber')?.value || ''
   const format = document.getElementById('ventas-format')?.value || ''
 
-  return data.filter(d => {
+  return getVisibleRows().filter(d => {
     const cls = getLineClassification(d)
     if (campaign && !sameCampaign(d, campaign)) return false
     if (month && d.month !== month) return false
@@ -825,7 +885,7 @@ function getProductFilteredRows() {
   const variety = document.getElementById('product-variety')?.value || ''
   const caliber = document.getElementById('product-caliber')?.value || ''
   const format = document.getElementById('product-format')?.value || ''
-  return data.filter(d => {
+  return getVisibleRows().filter(d => {
     const cls = getLineClassification(d)
     if (type && cls.type !== type) return false
     if (base && cls.product !== base) return false
@@ -935,13 +995,14 @@ window.renderProductos = renderProductos
 function renderClientes() {
   if (clienteSelected) { renderClienteDetail(clienteSelected); return }
 
-  const hasRev = data.some(d => d.base_iva > 0)
-  const hasKg  = data.some(d => d.kilos > 0)
+  const clientRows = getVisibleRows()
+  const hasRev = clientRows.some(d => d.base_iva > 0)
+  const hasKg  = clientRows.some(d => d.kilos > 0)
 
   const clientMap = {}
-  data.forEach(d => {
+  clientRows.forEach(d => {
     const code = d.cliente || ''
-    const name = getClientName(d) || 'Sin nombre'
+    const name = getClientName(d)
     const key  = code || name
     if (!clientMap[key]) clientMap[key] = { code, name, rev:0, kg:0, n:0, years:new Set(), lastYear:0 }
     clientMap[key].rev += d.base_iva
@@ -1008,7 +1069,7 @@ function backToClientes() { clienteSelected = null; renderClientes() }
 window.backToClientes = backToClientes
 
 function renderClienteDetail(key) {
-  const cliData = data.filter(d => d.cliente === key || d.denominacion_social === key)
+  const cliData = getVisibleRows().filter(d => d.cliente === key || d.denominacion_social === key || getClientName(d) === key)
   if (!cliData.length) { backToClientes(); return }
 
   const name   = cliData[0].denominacion_social || cliData[0].cliente || key
@@ -1104,12 +1165,13 @@ function renderTrendCharts() {
   const selProduct = document.getElementById('trend-product')?.value
   const campaignFrom = parseInt(document.getElementById('trend-year-from')?.value) || null
   const campaignTo   = parseInt(document.getElementById('trend-year-to')?.value)   || null
-  let campaigns      = getCampaigns()
+  const trendRows = getAnalysisRows()
+  let campaigns      = getCampaigns(trendRows)
   if (campaignFrom) campaigns = campaigns.filter(c => c >= campaignFrom)
   if (campaignTo)   campaigns = campaigns.filter(c => c <= campaignTo)
   const years = campaigns
 
-  const filtered = data.filter(d => {
+  const filtered = trendRows.filter(d => {
     if (selProduct && d.product !== selProduct) return false
     if (campaignFrom && getCampaignStart(d) < campaignFrom) return false
     if (campaignTo   && getCampaignStart(d) > campaignTo)   return false
@@ -1214,10 +1276,11 @@ function renderComparePage() { selectedYears = []; renderYearCards() }
 window.renderComparePage = renderComparePage
 
 function renderYearCards() {
-  const years  = getCampaigns()
-  const hasRev = data.some(d=>d.base_iva>0)
+  const compareRows = getAnalysisRows()
+  const years  = getCampaigns(compareRows)
+  const hasRev = compareRows.some(d=>d.base_iva>0)
   document.getElementById('cmp-year-cards').innerHTML = years.map(y => {
-    const yd  = data.filter(d=>sameCampaign(d, y))
+    const yd  = compareRows.filter(d=>sameCampaign(d, y))
     const val = hasRev ? sum(yd.map(d=>d.base_iva)) : avg(yd.filter(d=>d.price>0).map(d=>d.price))
     return `<div class="compare-year-card ${selectedYears.includes(y)?'selected':''}" onclick="toggleYear(${y})">
       <div class="yr">${campaignLabel(y)}</div>
@@ -1240,13 +1303,14 @@ function renderCompare() {
   if (selectedYears.length < 2) { chartCard.style.display='none'; tableCard.style.display='none'; return }
   chartCard.style.display = ''; tableCard.style.display = ''
 
+  const compareRows = getAnalysisRows()
   const colors = getChartColors()
-  const hasRev = data.some(d=>d.base_iva>0)
+  const hasRev = compareRows.some(d=>d.base_iva>0)
   destroyChart('compareChart')
   const datasets = selectedYears.sort().map((y,i) => {
     const mdata = Array.from({length:12},(_,mi) => {
       const m = mi < 3 ? mi + 10 : mi - 2
-      const pts = data.filter(d=>sameCampaign(d, y) && d.month===m && (!selProduct||d.product===selProduct))
+      const pts = compareRows.filter(d=>sameCampaign(d, y) && d.month===m && (!selProduct||d.product===selProduct))
       return hasRev ? sum(pts.map(d=>d.base_iva)) : avg(pts.filter(d=>d.price>0).map(d=>d.price)) || null
     })
     return { label:campaignLabel(y), data:mdata, borderColor:CHART_COLORS[i%CHART_COLORS.length], backgroundColor:CHART_COLORS[i%CHART_COLORS.length]+'15', borderWidth:2, tension:0.35, fill:false, pointRadius:4 }
@@ -1260,7 +1324,7 @@ function renderCompare() {
 
   let prevAvg = null
   const rows = selectedYears.sort().map(y => {
-    const pts = data.filter(d=>sameCampaign(d, y) && (!selProduct||d.product===selProduct))
+    const pts = compareRows.filter(d=>sameCampaign(d, y) && (!selProduct||d.product===selProduct))
     const a   = avg(pts.filter(d=>d.price>0).map(d=>d.price))
     const rev = sum(pts.map(d=>d.base_iva))
     const kg  = sum(pts.map(d=>d.kilos))
@@ -1276,7 +1340,7 @@ function renderCompare() {
       <td>${pct!==null?`<span class="badge ${pct>=0?'badge-up':'badge-down'}">${fmtPct(pct)}</span>`:'—'}</td>
     </tr>`
   })
-  const thead = `<thead><tr><th>Año</th><th>Precio medio</th><th>Máximo</th><th>Mínimo</th>${hasRev?'<th>Facturación</th>':''}${data.some(d=>d.kilos>0)?'<th>KG</th>':''}<th>Variación</th></tr></thead>`
+  const thead = `<thead><tr><th>Año</th><th>Precio medio</th><th>Máximo</th><th>Mínimo</th>${hasRev?'<th>Facturación</th>':''}${compareRows.some(d=>d.kilos>0)?'<th>KG</th>':''}<th>Variación</th></tr></thead>`
   document.getElementById('compare-stats-table').innerHTML = thead + `<tbody>${rows.join('')}</tbody>`
 }
 window.renderCompare = renderCompare
@@ -1334,7 +1398,8 @@ function linearRegression(points) {
 }
 
 function aggregatePredictionSeries(product) {
-  const source = (product ? data.filter(d=>d.product===product) : data)
+  const analysisRows = getAnalysisRows()
+  const source = (product ? analysisRows.filter(d=>d.product===product) : analysisRows)
     .filter(d => d.month && getLineClassification(d).type === 'Producto')
     .map(d => ({ ...d, effectivePrice: getEffectiveUnitPrice(d) }))
     .filter(d => d.effectivePrice > 0)
@@ -1509,7 +1574,7 @@ function renderTable() {
   const caliberF = document.getElementById('table-caliber')?.value || ''
   const formatF = document.getElementById('table-format')?.value || ''
 
-  let rows = data.filter(d => {
+  let rows = getVisibleRows().filter(d => {
     const cls = getLineClassification(d)
     let ok = true
     if (search) ok = ok && (d.product.toLowerCase().includes(search) || d.category.toLowerCase().includes(search) || (d.denominacion_social||'').toLowerCase().includes(search))
@@ -1529,7 +1594,7 @@ function renderTable() {
     tbody.innerHTML = `<tr><td colspan="10" class="empty-row">No se encontraron registros</td></tr>`
   } else {
     tbody.innerHTML = rows.slice(0, 200).map(d => {
-      const prevY = data.find(r => r.product === d.product && r.year === d.year - 1 && r.month === d.month)
+      const prevY = getVisibleRows().find(r => r.product === d.product && r.year === d.year - 1 && r.month === d.month)
       let delta = '', badgeCls = 'badge-flat'
       if (prevY && prevY.price > 0 && d.price > 0) {
         const pct = ((d.price - prevY.price) / prevY.price) * 100
@@ -1540,7 +1605,7 @@ function renderTable() {
       const cls = getLineClassification(d)
       return `<tr>
         <td><strong>${d.product}</strong></td>
-        <td>${cls.type}<br><span style="color:var(--color-text-muted)">${cls.product} · ${cls.variety} · ${cls.caliber}</span><br><span style="color:var(--color-text-muted)">${cls.format} · ${cls.quality}</span></td>
+        <td>${getClassificationPath(cls)}<br><span style="color:var(--color-text-muted)">${cls.subproduct}</span></td>
         <td>${campaignLabel(getCampaignStart(d))}</td>
         <td>${d.month ? MONTH_NAMES[d.month-1] : '—'}</td>
         <td class="td-num">${d.price > 0 ? fmtEur(d.price) : '—'}</td>
@@ -1565,7 +1630,7 @@ function doSearch() {
   const campaign = parseInt(document.getElementById('search-year').value) || null
   const month   = parseInt(document.getElementById('search-month').value) || null
 
-  let results = data.filter(d => {
+  let results = getVisibleRows().filter(d => {
     let ok = true
     if (product) ok = ok && d.product === product
     if (campaign) ok = ok && sameCampaign(d, campaign)
@@ -1653,7 +1718,7 @@ async function addRecord() {
   }
   try {
     const saved = await dbAddRecord(record)
-    if (saved) data.push(saved)
+    if (saved) { data.push(saved); clearDerivedCaches() }
     closeModal('add-modal')
     populateAllSelects()
     showToast('✓ Registro añadido')
@@ -1666,6 +1731,7 @@ async function deleteRecord(id) {
   try {
     await dbDeleteRecord(id)
     data = data.filter(d => d.id !== id)
+    clearDerivedCaches()
     rerenderCurrentPage()
     showToast('Registro eliminado')
   } catch(e) { console.error(e); showToast('⚠ Error al eliminar','error') }
@@ -1691,6 +1757,7 @@ async function deleteAllRecords() {
       showToast(`Borrando registros... ${done.toLocaleString('es-ES')}/${total.toLocaleString('es-ES')}`, '', 0)
     })
     data = []
+    clearDerivedCaches()
     populateAllSelects()
     rerenderCurrentPage()
     showToast(`✓ ${total.toLocaleString('es-ES')} registros eliminados`)
@@ -1707,7 +1774,7 @@ async function deleteAllRecords() {
 // =========== EXPORT ===========
 function exportCSV() {
   const headers = 'fecha,documento,cliente,denominacion_social,referencia,producto,categoria,kilos,pvp,base_iva,ano,mes,notas'
-  const rows    = data.map(d =>
+  const rows    = getVisibleRows().map(d =>
     [d.year+(d.month?'/'+d.month:''),d.documento,d.cliente,d.denominacion_social,d.referencia,d.product,d.category,d.kilos,d.price,d.base_iva,d.year,d.month||'',d.notes]
     .map(v => String(v||'').includes(',') ? `"${v}"` : (v||'')).join(',')
   )
@@ -2226,8 +2293,10 @@ async function executeImport(mapOverride = importMap) {
     if (updated.length) {
       const updatedById = new Map(updated.map(row => [row.id, row]))
       data = data.map(row => updatedById.get(row.id) || row)
+      clearDerivedCaches()
     }
     data = data.concat(saved)
+    if (saved.length) clearDerivedCaches()
     closeModal('import-modal')
     populateAllSelects()
     const fileLabel = sources.length > 1 ? sources.length.toLocaleString('es-ES') + ' archivos · ' : ''

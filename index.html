@@ -143,7 +143,9 @@ table { border-collapse: collapse; width: 100%; }
 
 .history-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .history-panel { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 16px; margin-bottom: 24px; }
-.history-list { max-height: 360px; overflow: auto; }
+.history-list { max-height: 360px; overflow: auto; contain: layout style paint; content-visibility: auto; }
+.table-wrap { contain: layout style paint; }
+.history-panel, .grid-4, .grid-2, .grid-3 { contain: layout style; }
 .history-item { padding: 12px 14px; border: 1px solid var(--color-border); border-radius: 12px; margin-bottom: 10px; background: var(--color-surface-2); }
 .history-item h4 { font-size: var(--text-sm); margin-bottom: 4px; }
 .history-item .meta { font-size: var(--text-xs); color: var(--color-text-muted); display: flex; gap: 10px; flex-wrap: wrap; }
@@ -275,7 +277,7 @@ table { border-collapse: collapse; width: 100%; }
       <div class="card" style="margin-bottom: var(--space-8)">
         <div class="chart-label"><span>Histórico y evolución</span></div>
         <div class="history-toolbar">
-          <input class="form-input" id="history-search" placeholder="Buscar producto..." oninput="renderHistoryView()" style="min-width:220px">
+          <input class="form-input" id="history-search" placeholder="Buscar producto..." oninput="debouncedHistorySearch()" style="min-width:220px">
           <select class="form-select" id="history-year" onchange="renderHistoryView()"></select>
           <select class="form-select" id="history-category" onchange="renderHistoryView()"></select>
           <select class="form-select" id="history-sort" onchange="renderHistoryView()">
@@ -326,7 +328,7 @@ table { border-collapse: collapse; width: 100%; }
       <div class="filters-bar">
         <div class="search-box">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="form-input" id="ventas-search" placeholder="Buscar producto o referencia…" oninput="ventasPage=0;renderVentas()">
+          <input type="text" class="form-input" id="ventas-search" placeholder="Buscar producto o referencia…" oninput="debouncedRenderVentas()">
         </div>
         <select class="form-select" id="ventas-year" onchange="ventasPage=0;renderVentas()" style="min-width:130px"></select>
         <select class="form-select" id="ventas-month" onchange="ventasPage=0;renderVentas()" style="min-width:130px"></select>
@@ -334,9 +336,9 @@ table { border-collapse: collapse; width: 100%; }
         <select class="form-select" id="ventas-type" onchange="populateAllSelects();ventasPage=0;renderVentas()" style="min-width:150px"></select>
         <select class="form-select" id="ventas-base" onchange="populateAllSelects();ventasPage=0;renderVentas()" style="min-width:150px"></select>
         <select class="form-select" id="ventas-variety" onchange="populateAllSelects();ventasPage=0;renderVentas()" style="min-width:160px"></select>
-        <select class="form-select" id="ventas-caliber" onchange="ventasPage=0;renderVentas()" style="min-width:130px"></select>
-        <select class="form-select" id="ventas-format" onchange="ventasPage=0;renderVentas()" style="min-width:150px"></select>
-        <select class="form-select" id="ventas-subproduct" onchange="ventasPage=0;renderVentas()" style="min-width:170px"></select>
+        <select class="form-select" id="ventas-caliber" onchange="populateAllSelects();ventasPage=0;renderVentas()" style="min-width:130px"></select>
+        <select class="form-select" id="ventas-format" onchange="populateAllSelects();ventasPage=0;renderVentas()" style="min-width:150px"></select>
+        <select class="form-select" id="ventas-subproduct" onchange="populateAllSelects();ventasPage=0;renderVentas()" style="min-width:170px"></select>
         <button class="btn btn-secondary" onclick="exportCSV()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Exportar CSV
@@ -370,9 +372,9 @@ table { border-collapse: collapse; width: 100%; }
         <select class="form-select" id="product-type" onchange="populateAllSelects();renderProductos()" style="min-width:150px"></select>
         <select class="form-select" id="product-base" onchange="populateAllSelects();renderProductos()" style="min-width:150px"></select>
         <select class="form-select" id="product-variety" onchange="populateAllSelects();renderProductos()" style="min-width:160px"></select>
-        <select class="form-select" id="product-caliber" onchange="renderProductos()" style="min-width:130px"></select>
-        <select class="form-select" id="product-format" onchange="renderProductos()" style="min-width:150px"></select>
-        <select class="form-select" id="product-subproduct" onchange="renderProductos()" style="min-width:180px"></select>
+        <select class="form-select" id="product-caliber" onchange="populateAllSelects();renderProductos()" style="min-width:130px"></select>
+        <select class="form-select" id="product-format" onchange="populateAllSelects();renderProductos()" style="min-width:150px"></select>
+        <select class="form-select" id="product-subproduct" onchange="populateAllSelects();renderProductos()" style="min-width:180px"></select>
       </div>
       <div class="summary-bar" id="product-summary"></div>
       <div id="product-content"></div>
@@ -481,7 +483,7 @@ table { border-collapse: collapse; width: 100%; }
       <div class="filters-bar">
         <div class="search-box">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="form-input" id="table-search" placeholder="Buscar producto..." oninput="renderTable()">
+          <input type="text" class="form-input" id="table-search" placeholder="Buscar producto..." oninput="debouncedRenderTable()">
         </div>
         <select class="form-select" id="table-year-filter" onchange="renderTable()" style="min-width:130px">
           <option value="">Todas las campañas</option>
@@ -492,9 +494,9 @@ table { border-collapse: collapse; width: 100%; }
         <select class="form-select" id="table-type" onchange="populateAllSelects();renderTable()" style="min-width:150px"></select>
         <select class="form-select" id="table-base" onchange="populateAllSelects();renderTable()" style="min-width:150px"></select>
         <select class="form-select" id="table-variety" onchange="populateAllSelects();renderTable()" style="min-width:160px"></select>
-        <select class="form-select" id="table-caliber" onchange="renderTable()" style="min-width:130px"></select>
-        <select class="form-select" id="table-format" onchange="renderTable()" style="min-width:150px"></select>
-        <select class="form-select" id="table-subproduct" onchange="renderTable()" style="min-width:170px"></select>
+        <select class="form-select" id="table-caliber" onchange="populateAllSelects();renderTable()" style="min-width:130px"></select>
+        <select class="form-select" id="table-format" onchange="populateAllSelects();renderTable()" style="min-width:150px"></select>
+        <select class="form-select" id="table-subproduct" onchange="populateAllSelects();renderTable()" style="min-width:170px"></select>
         <button class="btn btn-secondary" onclick="exportCSV()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Exportar CSV
@@ -563,7 +565,7 @@ table { border-collapse: collapse; width: 100%; }
       <div class="filters-bar" id="conf-filters">
         <div class="search-box">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input type="text" class="form-input" id="conf-search" placeholder="Buscar cliente, producto, lote…" oninput="confPage=0;renderConfeccion()">
+          <input type="text" class="form-input" id="conf-search" placeholder="Buscar cliente, producto, lote…" oninput="window.debouncedRenderConfeccion && debouncedRenderConfeccion()">
         </div>
         <select class="form-select" id="conf-tipo" onchange="confPage=0;renderConfeccion()" style="min-width:130px"></select>
         <select class="form-select" id="conf-cliente" onchange="confPage=0;renderConfeccion()" style="min-width:180px"></select>

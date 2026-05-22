@@ -5,3 +5,4 @@ dist/
 .claude/
 ventas
 ventas.csv
+.vercel

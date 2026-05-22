@@ -1,4 +1,5 @@
 import { supabase } from './supabase.js'
+import { debounce } from './utils.js'
 
 const CHUNK = 2000
 let data = []
@@ -235,6 +236,9 @@ function renderConfeccion() {
 }
 
 window.renderConfeccion = renderConfeccion
+
+const debouncedRenderConfeccion = debounce(() => { confPage = 0; renderConfeccion() }, 200)
+window.debouncedRenderConfeccion = debouncedRenderConfeccion
 
 function confGoPage(p) {
   const total = getFiltered().length
