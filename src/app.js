@@ -4,6 +4,7 @@ import {
   deleteAllRecords as dbDeleteAllRecords, subscribeToChanges, normalizeRow
 } from './database.js'
 import { debounce } from './utils.js'
+import { shared } from './data.js'
 
 // =========== GLOBALS ===========
 let data = []
@@ -380,19 +381,23 @@ function showToast(msg, type = '', duration = 3000) {
   if (duration > 0) toastTimer = setTimeout(() => t.className = 'toast', duration)
 }
 
-function renderLoadingState(count = 0) {
+function renderLoadingState(loaded = 0, total = 0) {
   const subtitle = document.getElementById('dashboard-subtitle')
-  if (subtitle) subtitle.textContent = count
-    ? `Cargando historico... ${fmtNum(count)} registros leidos`
-    : 'Cargando historico desde Supabase...'
+  if (subtitle) {
+    if (loaded === 0) subtitle.textContent = 'Cache disponible — cargando datos históricos...'
+    else if (total > 0 && loaded === total) subtitle.textContent = `${fmtNum(loaded)} registros cargados`
+    else subtitle.textContent = total > 0
+      ? `Cargando... ${fmtNum(loaded)} / ${fmtNum(total)}`
+      : `${fmtNum(loaded)} registros leídos`
+  }
 
   const kpiGrid = document.getElementById('kpi-grid')
   if (kpiGrid) kpiGrid.innerHTML = `
     <div class="loading-card" style="grid-column:1/-1">
       <div class="loading-spinner"></div>
       <div>
-        <div class="loading-title">Cargando historico</div>
-        <div class="loading-text">${count ? `${fmtNum(count)} registros leidos` : 'Conectando con Supabase'}</div>
+        <div class="loading-title">${loaded > 0 && loaded === total ? 'Datos cargados' : 'Cargando datos históricos'}</div>
+        <div class="loading-text">${total > 0 ? `${fmtNum(loaded)} / ${fmtNum(total)} registros` : `${fmtNum(loaded)} registros`}</div>
       </div>
     </div>
   `
@@ -414,54 +419,37 @@ function baseChartOptions(colors, unit = '€') {
 
 // =========== INIT ===========
 const debouncedReRender = debounce(rerenderCurrentPage, 250)
+let preciosLoaded = false
 
-async function initApp() {
+async function ensurePreciosLoaded() {
+  if (preciosLoaded) return
   isLoadingData = true
-  renderLoadingState()
   try {
-    data = await fetchAllRecords(count => renderLoadingState(count))
+    data = await fetchAllRecords((loaded, total) => renderLoadingState(loaded, total))
     data.forEach(d => getLineClassification(d))
+    shared.precios = data
+    preciosLoaded = true
   } catch(e) {
     console.error(e)
-    showToast('⚠ Error al cargar datos de Supabase', 'error')
+    showToast('⚠ Error al cargar datos históricos', 'error')
   }
   isLoadingData = false
   populateAllSelects()
-  renderDashboard()
-
-  const delBtn = document.querySelector('.btn-delete-all')
-  if (delBtn) delBtn.onclick = deleteAllRecords
-
-  subscribeToChanges((payload) => {
-    if (bulkDeleting) return
-    const eventType = payload.eventType || payload.event_type
-    const { new: nr, old: or } = payload
-    if (eventType === 'INSERT' && nr)  { data.push(normalizeRow(nr)); clearDerivedCaches(); showToast(`✓ Nuevo: ${nr.producto}`) }
-    else if (eventType === 'DELETE' && or) { data = data.filter(d => d.id !== or.id); clearDerivedCaches() }
-    else if (eventType === 'UPDATE' && nr) {
-      const i = data.findIndex(d => d.id === nr.id)
-      if (i !== -1) { data[i] = normalizeRow(nr); clearDerivedCaches() }
-    }
-    debouncedReRender()
-  })
 }
 
-const debouncedRenderVentas = debounce(() => { ventasPage = 0; renderVentas() }, 200)
-const debouncedRenderTable = debounce(renderTable, 200)
-const debouncedHistorySearch = debounce(renderHistoryView, 200)
+const PRECIOS_PAGES = ['page-dashboard','page-ventas','page-productos','page-clientes','page-tendencias','page-comparar','page-predicciones','page-datos','page-buscar']
 
-window.debouncedRenderVentas = debouncedRenderVentas
-window.debouncedRenderTable = debouncedRenderTable
-window.debouncedHistorySearch = debouncedHistorySearch
-
-function rerenderCurrentPage() {
+async function rerenderCurrentPage() {
   const active = document.querySelector('.page.active')?.id
   if (!active) return
+  if (PRECIOS_PAGES.includes(active) && !preciosLoaded) {
+    await ensurePreciosLoaded()
+  }
   populateAllSelects()
   if (active === 'page-dashboard')    renderDashboard()
   else if (active === 'page-ventas')  renderVentas()
   else if (active === 'page-productos') renderProductos()
-  else if (active === 'page-clientes') renderClientes()
+   else if (active === 'page-clientes') { if (window.renderClientes) window.renderClientes() }
   else if (active === 'page-tendencias') renderTrends()
   else if (active === 'page-comparar')  renderComparePage()
   else if (active === 'page-predicciones') renderPredictions()
@@ -469,6 +457,45 @@ function rerenderCurrentPage() {
   else if (active === 'page-buscar')  initSearch()
   else if (active === 'page-confeccion') window.renderConfeccion && renderConfeccion()
 }
+window.rerenderCurrentPage = rerenderCurrentPage
+
+async function initApp() {
+  const delBtn = document.querySelector('.btn-delete-all')
+  if (delBtn) delBtn.onclick = deleteAllRecords
+
+  subscribeToChanges((payload) => {
+    if (bulkDeleting) return
+    const eventType = payload.eventType || payload.event_type
+    const { new: nr, old: or } = payload
+    if (eventType === 'INSERT' && nr)  { if (preciosLoaded) { data.push(normalizeRow(nr)); clearDerivedCaches(); showToast(`✓ Nuevo: ${nr.producto}`) } }
+    else if (eventType === 'DELETE' && or) { if (preciosLoaded) { data = data.filter(d => d.id !== or.id); clearDerivedCaches() } }
+    else if (eventType === 'UPDATE' && nr) {
+      if (preciosLoaded) {
+        const i = data.findIndex(d => d.id === nr.id)
+        if (i !== -1) { data[i] = normalizeRow(nr); clearDerivedCaches() }
+      }
+    }
+    if (preciosLoaded) debouncedReRender()
+  })
+
+  // Render initial active page
+  const active = document.querySelector('.page.active')?.id
+  if (active) {
+    if (active === 'page-dashboard') {
+      showToast('Cargando datos históricos...', '', 0)
+      await ensurePreciosLoaded()
+      renderDashboard()
+    }
+  }
+}
+
+const debouncedRenderVentas = debounce(() => { ensurePreciosLoaded().then(() => { ventasPage = 0; renderVentas() }) }, 200)
+const debouncedRenderTable = debounce(() => { ensurePreciosLoaded().then(() => renderTable()) }, 200)
+const debouncedHistorySearch = debounce(() => { ensurePreciosLoaded().then(() => renderHistoryView()) }, 200)
+
+window.debouncedRenderVentas = debouncedRenderVentas
+window.debouncedRenderTable = debouncedRenderTable
+window.debouncedHistorySearch = debouncedHistorySearch
 
 // =========== NAVIGATION ===========
 function navigate(page, btn) {
@@ -476,12 +503,17 @@ function navigate(page, btn) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
   document.getElementById('page-' + page).classList.add('active')
   if (btn) btn.classList.add('active')
-  // Defer heavy render so the page switch is instant visually
-  requestAnimationFrame(() => {
+  const PRECIOS_NAV = ['dashboard','ventas','productos','clientes','tendencias','comparar','predicciones','datos','buscar']
+  const needsPrecios = PRECIOS_NAV.includes(page)
+  requestAnimationFrame(async () => {
+    if (needsPrecios && !preciosLoaded) {
+      document.getElementById('page-' + page).innerHTML = '<div class="loading-card" style="margin:var(--space-8)"><div class="loading-spinner"></div><div><div class="loading-title">Cargando datos históricos</div><div class="loading-text">Esto puede tomar unos segundos…</div></div></div>'
+      await ensurePreciosLoaded()
+    }
     if (page === 'dashboard')    renderDashboard()
     if (page === 'ventas')       { ventasPage = 0; renderVentas() }
     if (page === 'productos')    renderProductos()
-    if (page === 'clientes')     { clienteSelected = null; renderClientes() }
+    if (page === 'clientes')     { window.renderClientes ? window.renderClientes() : (clienteSelected = null, renderClientes()) }
     if (page === 'tendencias')   renderTrendCharts()
     if (page === 'comparar')     renderComparePage()
     if (page === 'predicciones') renderPredictions()
@@ -589,34 +621,39 @@ function renderDashboard() {
   }
   const sourceRows = getAnalysisRows()
   const campaigns = getCampaigns(sourceRows)
-  if (!campaigns.length) {
-    document.getElementById('kpi-grid').innerHTML = '<div class="kpi-card" style="grid-column:1/-1"><div class="kpi-label">Sin datos</div><div class="kpi-value" style="font-size:var(--text-base)">Importa registros para comenzar</div></div>'
-    return
-  }
 
-  const latestCampaign = campaigns[campaigns.length - 1]
-  const prevCampaign   = campaigns[campaigns.length - 2]
-  const latestRows = sourceRows.filter(d => sameCampaign(d, latestCampaign))
-  const prevRows = sourceRows.filter(d => sameCampaign(d, prevCampaign))
-  const avgLatest = weightedPrice(latestRows)
-  const avgPrev = weightedPrice(prevRows)
-  const pctChange   = avgPrev ? ((avgLatest - avgPrev) / avgPrev) * 100 : 0
+  // Confeccion data for combined KPIs
+  const conf = window.shared?.confeccion || []
+  const confClients = new Set(conf.map(d => d.cliente_nombre || d.denominacion_social || '').filter(Boolean)).size
+  const confBases = new Set(conf.map(d => d.producto_base).filter(Boolean)).size
+  const confKg = conf.reduce((s, d) => s + parseFloat(d.kg_netos || 0), 0)
+  const confRev = conf.reduce((s, d) => s + parseFloat(d.base_iva || 0), 0)
+  const totalRev = (sourceRows.length ? sum(sourceRows.map(d => d.base_iva)) : 0) + confRev
 
-  const latestKg = sum(latestRows.map(d => d.kilos))
-  const latestClients = new Set(latestRows.map(getClientName).filter(Boolean)).size
-  const latestVarieties = new Set(latestRows.map(d => getLineClassification(d).variety).filter(Boolean)).size
+  document.getElementById('dashboard-subtitle').textContent = campaigns.length
+    ? `Naranja por kg desde 2015/16 · ${campaignLabel(campaigns[0])} a ${campaignLabel(campaigns[campaigns.length-1])} · ${sourceRows.length.toLocaleString('es')} líneas · ${conf.length} palets confección`
+    : `Panel combinado · ${conf.length} palets confección`
 
-  document.getElementById('dashboard-subtitle').textContent =
-    `Naranja por kg desde 2015/16 · ${campaignLabel(campaigns[0])} a ${campaignLabel(latestCampaign)} · ${sourceRows.length.toLocaleString('es')} líneas útiles`
+  const preciosKpis = campaigns.length ? [
+    { label: `Precio medio ${campaignLabel(campaigns[campaigns.length-1])}`,
+      value: `${fmtEur(weightedPrice(sourceRows.filter(d => sameCampaign(d, campaigns[campaigns.length-1]))))}/kg`,
+      delta: campaigns.length > 1 ? fmtPct((weightedPrice(sourceRows.filter(d => sameCampaign(d, campaigns[campaigns.length-1]))) - weightedPrice(sourceRows.filter(d => sameCampaign(d, campaigns[campaigns.length-2])))) / weightedPrice(sourceRows.filter(d => sameCampaign(d, campaigns[campaigns.length-2])))) : '—',
+      up: weightedPrice(sourceRows.filter(d => sameCampaign(d, campaigns[campaigns.length-1]))) >= weightedPrice(sourceRows.filter(d => sameCampaign(d, campaigns[campaigns.length-2]))) },
+    { label: 'Kilos campaña', value: fmtKg(sum(sourceRows.filter(d => sameCampaign(d, campaigns[campaigns.length-1])).map(d => d.kilos))), delta: campaignLabel(campaigns[campaigns.length-1]), flat: true },
+    { label: 'Clientes activos', value: String(new Set(sourceRows.map(getClientName).filter(Boolean)).size), delta: 'Desde 2015', flat: true },
+    { label: 'Variedades', value: String(new Set(sourceRows.map(d => getLineClassification(d).variety).filter(Boolean)).size), delta: 'Histórico', flat: true },
+  ] : []
 
-  const kpis = [
-    { label: `Precio medio ${campaignLabel(latestCampaign)}`, value: `${fmtEur(avgLatest)}/kg`, delta: avgPrev ? fmtPct(pctChange) : 'Sin campaña previa', up: pctChange >= 0 },
-    { label: 'Kilos campaña', value: latestKg > 0 ? fmtKg(latestKg) : '—', delta: campaignLabel(latestCampaign), flat: true },
-    { label: 'Clientes activos', value: String(latestClients || 0), delta: 'Con nombre agrupado', flat: true },
-    { label: 'Variedades', value: String(latestVarieties || 0), delta: 'En campaña actual', flat: true },
-  ]
+  const confKpis = conf.length ? [
+    { label: 'Palets confección', value: fmtNum(conf.length), delta: `${confBases} productos base`, flat: true },
+    { label: 'KG confeccionados', value: fmtKg(confKg), delta: confBases + ' variedades', flat: true },
+    { label: 'Clientes confección', value: fmtNum(confClients), delta: 'Con palets registrados', flat: true },
+    { label: 'Fact. confección', value: fmtEur(confRev), delta: 'Base IVA total', flat: true },
+  ] : []
 
-  document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
+  const allKpis = [...(campaigns.length ? [{ label: 'Facturación total combinada', value: fmtEur(totalRev), delta: 'Ventas + Confección', flat: true }] : []), ...preciosKpis, ...confKpis]
+
+  document.getElementById('kpi-grid').innerHTML = allKpis.map(k => `
     <div class="kpi-card">
       <div class="kpi-label">${k.label}</div>
       <div class="kpi-value">${k.value}</div>
@@ -624,7 +661,7 @@ function renderDashboard() {
     </div>
   `).join('')
 
-  renderDashCharts()
+  if (campaigns.length) renderDashCharts()
 }
 
 function renderDashCharts() {

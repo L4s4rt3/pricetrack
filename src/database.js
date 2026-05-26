@@ -1,11 +1,27 @@
 import { supabase } from './supabase.js'
+import { saveToCache, loadFromCache, getCachedCount } from './cache.js'
 
 const TABLE = 'precios'
 const PAGE_SIZE = 1000
+const CONCURRENCY = 10
 
-export async function fetchAllRecords(onProgress) {
-  let all = [], from = 0
-  while (true) {
+async function getServerCount() {
+  const { count, error } = await supabase
+    .from(TABLE)
+    .select('*', { count: 'exact', head: true })
+  if (error) throw error
+  return count || 0
+}
+
+async function parallelFetch(onProgress) {
+  const total = await getServerCount()
+  const pages = Math.ceil(total / PAGE_SIZE)
+  let all = []
+  let loaded = 0
+
+  // Build page fetchers
+  const fetchers = Array.from({ length: pages }, (_, i) => async () => {
+    const from = i * PAGE_SIZE
     const { data, error } = await supabase
       .from(TABLE)
       .select('*')
@@ -13,13 +29,48 @@ export async function fetchAllRecords(onProgress) {
       .order('mes', { ascending: true })
       .range(from, from + PAGE_SIZE - 1)
     if (error) throw error
-    if (!data?.length) break
-    all = all.concat(data)
-    if (onProgress) onProgress(all.length)
-    if (data.length < PAGE_SIZE) break
-    from += PAGE_SIZE
+    return data || []
+  })
+
+  // Process in concurrent batches
+  for (let i = 0; i < fetchers.length; i += CONCURRENCY) {
+    const batch = fetchers.slice(i, i + CONCURRENCY)
+    const results = await Promise.all(batch.map(f => f()))
+    for (const data of results) {
+      loaded += data.length
+      if (onProgress) onProgress(loaded, total)
+    }
+    all.push(...results.flat())
   }
+
   return all.map(normalizeRow)
+}
+
+export async function fetchAllRecords(onProgress) {
+  // Try cache first
+  const cachedCount = await getCachedCount()
+  let serverCount = null
+  try {
+    serverCount = await getServerCount()
+  } catch { /* offline fallback */ }
+
+  if (cachedCount !== null && serverCount !== null && cachedCount === serverCount) {
+    const cached = await loadFromCache()
+    if (cached) {
+      if (onProgress) onProgress(cached.length, cached.length)
+      return cached
+    }
+  }
+
+  // Parallel fetch from server
+  const data = await parallelFetch((loaded, total) => {
+    if (onProgress) onProgress(loaded, total)
+  })
+
+  // Save to cache (fire and forget)
+  saveToCache(data).catch(() => {})
+
+  return data
 }
 
 export function normalizeRow(row) {

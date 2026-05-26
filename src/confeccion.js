@@ -1,5 +1,6 @@
 import { supabase } from './supabase.js'
 import { debounce } from './utils.js'
+import { shared } from './data.js'
 
 const CHUNK = 2000
 let data = []
@@ -95,6 +96,7 @@ async function initConfeccion() {
   if (tbody) tbody.innerHTML = '<tr><td colspan="14" class="empty-row">Cargando datos de confección...</td></tr>'
   try {
     data = await fetchConfeccion()
+    shared.confeccion = data
   } catch (e) {
     console.error(e)
     if (tbody) tbody.innerHTML = `<tr><td colspan="14" class="empty-row" style="color:var(--color-error)">Error al cargar: ${e.message}</td></tr>`
@@ -239,6 +241,122 @@ window.renderConfeccion = renderConfeccion
 
 const debouncedRenderConfeccion = debounce(() => { confPage = 0; renderConfeccion() }, 200)
 window.debouncedRenderConfeccion = debouncedRenderConfeccion
+
+let treeVisible = false
+function toggleProductTree() {
+  treeVisible = !treeVisible
+  const el = document.getElementById('conf-tree')
+  if (!el) return
+  if (treeVisible) {
+    el.innerHTML = buildProductTreeHTML()
+    el.style.display = 'block'
+    setTimeout(setupTreeClickHandlers, 0)
+  } else {
+    el.style.display = 'none'
+  }
+}
+window.toggleProductTree = toggleProductTree
+
+function buildProductTreeHTML() {
+  const tree = {}
+  for (const d of data) {
+    if (d.tipo !== 'Producto') continue
+    const base = d.producto_base || 'Otros'
+    const varKey = d.variedad || 'Sin variedad'
+    const calKey = d.calibre || 'Sin calibre'
+    if (!tree[base]) tree[base] = { count: 0, kg: 0, variedades: {} }
+    tree[base].count++
+    tree[base].kg += parseFloat(d.kg_netos || 0)
+    if (!tree[base].variedades[varKey]) tree[base].variedades[varKey] = { count: 0, kg: 0, calibres: {} }
+    tree[base].variedades[varKey].count++
+    tree[base].variedades[varKey].kg += parseFloat(d.kg_netos || 0)
+    if (!tree[base].variedades[varKey].calibres[calKey]) tree[base].variedades[varKey].calibres[calKey] = { count: 0, kg: 0 }
+    tree[base].variedades[varKey].calibres[calKey].count++
+    tree[base].variedades[varKey].calibres[calKey].kg += parseFloat(d.kg_netos || 0)
+  }
+
+  const bases = Object.entries(tree).sort((a, b) => b[1].count - a[1].count)
+  let html = '<div class="card" style="background:var(--color-surface-offset)"><div style="font-size:var(--text-xs);font-weight:600;color:var(--color-text-muted);margin-bottom:var(--space-3);text-transform:uppercase;letter-spacing:0.05em">Explorar productos</div>'
+  for (const [base, bv] of bases) {
+    const pct = ((bv.count / data.filter(d => d.tipo === 'Producto').length) * 100).toFixed(0)
+    html += `<details style="margin-bottom:4px" ${Object.keys(tree).length <= 1 ? 'open' : ''}>
+      <summary style="cursor:pointer;padding:6px 10px;border-radius:4px;font-size:var(--text-sm);font-weight:600;background:var(--color-surface);border:1px solid var(--color-border)">
+        ${base} <span style="color:var(--color-text-muted);font-weight:400">— ${bv.count} palets · ${fmtKg(bv.kg)} (${pct}%)</span>
+      </summary>
+      <div style="padding:4px 0 4px 20px">`
+    const variedades = Object.entries(bv.variedades).sort((a, b) => b[1].count - a[1].count)
+    for (const [varKey, vv] of variedades) {
+      html += `<details style="margin-bottom:2px" open>
+        <summary style="cursor:pointer;padding:4px 8px;border-radius:3px;font-size:var(--text-xs);font-weight:500">
+          ${varKey} <span style="color:var(--color-text-muted)">— ${vv.count} palets · ${fmtKg(vv.kg)}</span>
+        </summary>
+        <div style="padding:2px 0 2px 16px">`
+      const calibres = Object.entries(vv.calibres).sort((a, b) => b[1].count - a[1].count)
+      for (const [calKey, cv] of calibres) {
+        html += `<div style="padding:3px 8px;font-size:var(--text-xs);cursor:pointer;border-radius:3px" class="tree-leaf" data-base="${base}" data-variedad="${varKey}" data-calibre="${calKey}">
+          ${calKey} <span style="color:var(--color-text-muted)">— ${cv.count} palets · ${fmtKg(cv.kg)}</span>
+        </div>`
+      }
+      html += `</div></details>`
+    }
+    html += `</div></details>`
+  }
+  html += '</div>'
+  return html
+}
+
+function setupTreeClickHandlers() {
+  document.querySelectorAll('.tree-leaf').forEach(el => {
+    el.addEventListener('click', function () {
+      const base = this.dataset.base
+      const variedad = this.dataset.variedad
+      const calibre = this.dataset.calibre
+      const selBase = document.getElementById('conf-producto-base')
+      const selVar = document.getElementById('conf-variedad')
+      const selCal = document.getElementById('conf-calibre')
+      if (selBase) selBase.value = base
+      if (selVar) selVar.value = variedad
+      if (selCal) selCal.value = calibre
+      treeVisible = false
+      const treeEl = document.getElementById('conf-tree')
+      if (treeEl) treeEl.style.display = 'none'
+      confPage = 0
+      renderConfeccion()
+    })
+  })
+}
+
+function exportConfeccionCSV() {
+  const rows = getFiltered()
+  if (!rows.length) { showToastConf('Sin datos para exportar', 'error'); return }
+  const headers = ['Nº Palet','Tipo Palet','Fecha','Producto','Lote','Documento','Cliente','Cajas','Tipo Caja','Kg Netos','Kg Facturados','Situación','Producto Base','Variedad','Calibre','PVP/kg','PVP','Referencia','Kilos Venta']
+  const csv = [headers.join(';')]
+  for (const d of rows) {
+    csv.push([
+      d.nº_palet || '', d.tipo_palet || '', d.fecha_confeccion || '', d.producto_confeccionado || '',
+      d.lote || '', d.documento_limpio || d.documento_venta_original || '', d.cliente_nombre || '',
+      d.cajas || 0, d.tipo_caja || '', d.kg_netos || 0, d.kg_facturados || 0, d.situacion || '',
+      d.producto_base || '', d.variedad || '', d.calibre || '',
+      d.pvp_kg || 0, d.pvp || 0, d.referencia || '', d.kilos_venta || 0,
+    ].join(';'))
+  }
+  const blob = new Blob([csv.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = 'confeccion_export.csv'; a.click()
+  URL.revokeObjectURL(url)
+  showToastConf(`Exportadas ${rows.length} filas`)
+}
+window.exportConfeccionCSV = exportConfeccionCSV
+
+function showToastConf(msg, type) {
+  const el = document.getElementById('conf-count')
+  if (!el) return
+  const orig = el.textContent
+  el.textContent = '✓ ' + msg
+  el.style.color = type === 'error' ? 'var(--color-error)' : 'var(--color-success)'
+  setTimeout(() => { el.textContent = orig; el.style.color = '' }, 2500)
+}
 
 function confGoPage(p) {
   const total = getFiltered().length
