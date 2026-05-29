@@ -7,16 +7,13 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePrecios } from "@/hooks/usePrecios";
-import { useConfeccion } from "@/hooks/useConfeccion";
 import { campaignLabel, CAMPAIGN_MONTHS, formatEur, formatKg, formatNum } from "@/lib/format";
 import { BAR_STYLE, C, CHART_PANEL_CLASS, GRID, MARGIN, XAXIS, YAXIS, barFill, GlassTooltip } from "@/lib/chartTheme";
-import { sum, weightedPrice } from "@/lib/parsers";
 import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
-import { SaleFilterPanel, campaignRows, filterSales, groupRows, summaryStats, useEnrichedPrecios, useSaleFilterState } from "./pageHelpers";
+import { SaleFilterPanel, campaignRows, filterSales, groupRows, productPriceRows, productWeightedPrice, summaryStats, useEnrichedPrecios, useSaleFilterState } from "./pageHelpers";
 
 export default function Dashboard() {
   const { data, isLoading } = usePrecios();
-  const { data: confeccion } = useConfeccion();
   const rows = useEnrichedPrecios(data);
   const [filters, setFilters] = useSaleFilterState();
   const deferredFilters = useDeferredValue(filters);
@@ -25,18 +22,18 @@ export default function Dashboard() {
   const campaigns = useMemo(() => Array.from(new Set(filtered.map((row) => row.campaign))).sort((a, b) => a - b), [filtered]);
   const currentCampaign = Number(selectedCampaign || campaigns[campaigns.length - 1] || new Date().getFullYear());
   const currentRows = useMemo(() => campaignRows(filtered, currentCampaign), [filtered, currentCampaign]);
+  const currentProductRows = useMemo(() => productPriceRows(currentRows), [currentRows]);
   const stats = summaryStats(currentRows);
-  const confRevenue = sum((confeccion ?? []).map((row) => row.pvp_total || row.kg_netos * row.pvp_kg));
 
   const annualData = campaigns.map((campaign) => ({
     label: campaignLabel(campaign),
-    price: Number(weightedPrice(campaignRows(filtered, campaign)).toFixed(3)),
+    price: Number(productWeightedPrice(campaignRows(filtered, campaign)).toFixed(3)),
   }));
   const monthlyData = CAMPAIGN_MONTHS.map((label, index) => {
     const month = index < 3 ? index + 10 : index - 2;
-    return { label, price: Number(weightedPrice(currentRows.filter((row) => row.month === month)).toFixed(3)) };
+    return { label, price: Number(productWeightedPrice(currentRows.filter((row) => row.month === month)).toFixed(3)) };
   });
-  const varietyData = groupRows(currentRows, (row) => row.cls.variety).slice(0, 8);
+  const varietyData = groupRows(currentProductRows, (row) => row.cls.variety).slice(0, 8);
 
   if (isLoading) {
     return (
@@ -61,10 +58,10 @@ export default function Dashboard() {
     <div className="page-shell">
       <PageHeader title="Resumen" subtitle={`${formatNum(rows.length)} lineas · desde campana ${MIN_CAMPAIGN_LABEL}`} />
       <section className="metric-strip">
-        <KPICard label="Precio medio" value={`${formatEur(stats.price)}/kg`} hint={campaignLabel(currentCampaign)} icon={DollarSign} />
-        <KPICard label="Kilos campana" value={formatKg(stats.kg)} hint={`${formatNum(stats.lines)} lineas`} icon={Package} />
+        <KPICard label="Precio producto" value={`${formatEur(stats.price)}/kg`} hint={campaignLabel(currentCampaign)} icon={DollarSign} />
+        <KPICard label="Kilos producto" value={formatKg(stats.productKg)} hint={`${formatNum(currentProductRows.length)} lineas`} icon={Package} />
         <KPICard label="Clientes activos" value={formatNum(stats.clients)} hint="Filtro actual" icon={Users} />
-        <KPICard label="Facturacion" value={formatEur(stats.revenue + confRevenue)} hint="Ventas + confeccion" icon={TrendingUp} />
+        <KPICard label="Facturacion producto" value={formatEur(stats.productRevenue)} hint="Solo ventas" icon={TrendingUp} />
       </section>
       <SaleFilterPanel rows={rows} filters={filters} onChange={setFilters} compact />
       <div className="section-toolbar">
@@ -74,14 +71,14 @@ export default function Dashboard() {
         </select>
       </div>
       <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
-        <ChartCard title="Evolucion precio/kg">
+        <ChartCard title="Evolucion precio/kg producto">
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={annualData} margin={MARGIN}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" {...XAXIS} />
               <YAxis {...YAXIS} tickFormatter={(v) => `${Number(v).toFixed(2)}€`} />
               <Tooltip content={<GlassTooltip />} />
-              <Line dataKey="price" stroke={C.primary} strokeWidth={2.5} dot={false} name="Precio" />
+              <Line dataKey="price" stroke={C.primary} strokeWidth={2.5} dot={false} name="Precio producto" />
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -92,19 +89,19 @@ export default function Dashboard() {
               <XAxis type="number" {...XAXIS} tickFormatter={(v) => `${Number(v).toFixed(2)}€`} />
               <YAxis type="category" dataKey="name" {...XAXIS} width={120} />
               <Tooltip content={<GlassTooltip />} />
-              <Bar dataKey="price" {...BAR_STYLE} fill={barFill(C.primary, 0.28)} stroke={C.primary} name="Precio" />
+              <Bar dataKey="price" {...BAR_STYLE} fill={barFill(C.primary, 0.28)} stroke={C.primary} name="Precio producto" />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
       </div>
-      <ChartCard title={`Precio mensual · ${campaignLabel(currentCampaign)}`}>
+      <ChartCard title={`Precio producto mensual · ${campaignLabel(currentCampaign)}`}>
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={monthlyData} margin={MARGIN}>
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" {...XAXIS} />
             <YAxis {...YAXIS} tickFormatter={(v) => `${Number(v).toFixed(2)}€`} />
             <Tooltip content={<GlassTooltip />} />
-            <Bar dataKey="price" {...BAR_STYLE} fill={barFill(C.primary, 0.28)} stroke={C.primary} name="Precio" />
+            <Bar dataKey="price" {...BAR_STYLE} fill={barFill(C.primary, 0.28)} stroke={C.primary} name="Precio producto" />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>

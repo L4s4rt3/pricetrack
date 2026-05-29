@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BarChart3, Database, FileText, GitCompareArrows, LayoutDashboard, LineChart, Package, Table2, TrendingUp, Users } from "lucide-react";
+import { BarChart3, Database, FileText, GitCompareArrows, LayoutDashboard, LineChart, Package, ShoppingBag, TrendingUp, Truck, Users } from "lucide-react";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 
 const pages = [
-  { label: "Resumen", path: "/", icon: LayoutDashboard },
+  { label: "Dashboard", path: "/", icon: LayoutDashboard },
+  { label: "Comercial", path: "/comercial", icon: ShoppingBag },
+  { label: "Logistica", path: "/logistica", icon: Truck },
+  { label: "Analisis", path: "/analisis", icon: BarChart3 },
   { label: "Ventas", path: "/ventas", icon: FileText },
   { label: "Productos", path: "/productos", icon: Package },
   { label: "Clientes", path: "/clientes", icon: Users },
-  { label: "Confeccion", path: "/confeccion", icon: Table2 },
   { label: "Tendencias", path: "/tendencias", icon: TrendingUp },
   { label: "Comparar", path: "/comparar", icon: GitCompareArrows },
   { label: "Predicciones", path: "/predicciones", icon: LineChart },
   { label: "Datos", path: "/datos", icon: Database },
-  { label: "Analisis", path: "/tendencias", icon: BarChart3 },
 ];
 
 export function useCommandPalette() {

@@ -25,6 +25,7 @@ export default function Clientes() {
   const top = filtered.slice(0, 12);
   const revenue = filtered.reduce((s, c) => s + c.facturacion, 0);
   const kg = filtered.reduce((s, c) => s + c.kg, 0);
+  const confeccionKg = filtered.reduce((s, c) => s + c.confeccionKg, 0);
   const selectedName = selected || filtered[0]?.nombre || "";
   const selectedRows = salesRows.filter((row) => row.clientLabel === selectedName);
   const selectedConfeccion = (confeccion ?? []).filter((row) => (row.cliente_nombre || row.denominacion_social) === selectedName);
@@ -36,8 +37,9 @@ export default function Clientes() {
       <PageHeader title="Clientes" subtitle="Ranking y detalle de clientes por facturacion y volumen" />
       <section className="metric-strip">
         <KPICard label="Clientes" value={formatNum(filtered.length)} icon={Users} />
-        <KPICard label="Facturacion" value={formatEur(revenue)} icon={Euro} />
-        <KPICard label="Kilos" value={formatKg(kg)} icon={Package} />
+        <KPICard label="Facturacion ventas" value={formatEur(revenue)} icon={Euro} />
+        <KPICard label="KG producto" value={formatKg(kg)} icon={Package} />
+        <KPICard label="KG confeccion" value={formatKg(confeccionKg)} icon={Package} />
       </section>
       <div className="section-toolbar">
         <div className="relative min-w-[260px] flex-1">
@@ -53,15 +55,16 @@ export default function Clientes() {
               rows={filtered}
               getRowKey={(row) => row.nombre}
               columns={[
-                { key: "name", header: "Cliente", cell: (row) => <button className="text-left font-medium hover:text-primary" onClick={() => setSelected(row.nombre)}>{row.nombre}<div className="text-xs font-normal text-muted-foreground">{row.registros} registros · {row.fuente}</div></button> },
-                { key: "kg", header: "KG", cell: (row) => formatKg(row.kg), className: "text-right" },
-                { key: "revenue", header: "Facturacion", cell: (row) => formatEur(row.facturacion), className: "text-right font-semibold" },
+                { key: "name", header: "Cliente", cell: (row) => <button className="text-left font-medium hover:text-primary" onClick={() => setSelected(row.nombre)}>{row.nombre}<div className="text-xs font-normal text-muted-foreground">{formatNum(row.ventasRegistros)} ventas / {formatNum(row.confeccionRegistros)} conf. / {row.fuente}</div></button> },
+                { key: "kg", header: "KG producto", cell: (row) => formatKg(row.kg), className: "text-right" },
+                { key: "conf", header: "KG conf.", cell: (row) => formatKg(row.confeccionKg), className: "text-right" },
+                { key: "revenue", header: "Facturacion ventas", cell: (row) => formatEur(row.facturacion), className: "text-right font-semibold" },
               ]}
             />
           </CardContent>
         </Card>
         <Card className="glass-accented">
-          <CardHeader><CardTitle className="text-lg">Facturacion principal</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-lg">Facturacion ventas</CardTitle></CardHeader>
           <CardContent>
             <div className={CHART_PANEL_CLASS}>
               <ResponsiveContainer width="100%" height={360}>
@@ -70,7 +73,7 @@ export default function Clientes() {
                   <XAxis type="number" {...XAXIS} tickFormatter={(v) => formatEur(Number(v))} />
                   <YAxis type="category" dataKey="nombre" {...XAXIS} width={150} />
                   <Tooltip content={<GlassTooltip />} />
-                  <Bar dataKey="facturacion" {...BAR_STYLE} fill={barFill(C.primary, 0.28)} stroke={C.primary} name="Facturacion" />
+                  <Bar dataKey="facturacion" {...BAR_STYLE} fill={barFill(C.primary, 0.28)} stroke={C.primary} name="Facturacion ventas" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -85,9 +88,11 @@ export default function Clientes() {
               rows={[
                 ...selectedRows.slice(0, 16).map((row) => ({
                   key: `v-${row.id}`,
-                  date: campaignLabel(row.campaign),
+                  date: row.fecha_fra || campaignLabel(row.campaign),
                   product: row.product,
+                  detail: row.factura || row.documento || campaignLabel(row.campaign),
                   kg: row.kilos,
+                  price: row.kilos > 0 ? row.base_iva / row.kilos : row.price,
                   total: row.base_iva,
                   source: "Ventas",
                 })),
@@ -95,7 +100,9 @@ export default function Clientes() {
                   key: `c-${row.id}`,
                   date: row.fecha || "-",
                   product: row.producto_confeccionado || row.producto_base,
+                  detail: [row.lote && `Lote ${row.lote}`, row.n_palet && `Palet ${row.n_palet}`, row.documento_limpio].filter(Boolean).join(" · "),
                   kg: row.kg_netos,
+                  price: row.pvp_kg,
                   total: row.pvp_total || row.kg_netos * row.pvp_kg,
                   source: "Confeccion",
                 })),
@@ -103,8 +110,9 @@ export default function Clientes() {
               getRowKey={(row) => row.key}
               columns={[
                 { key: "date", header: "Fecha", cell: (row) => <>{row.date}<div className="text-xs text-muted-foreground">{row.source}</div></> },
-                { key: "product", header: "Producto", cell: (row) => row.product },
+                { key: "product", header: "Producto / trazabilidad", cell: (row) => <>{row.product}<div className="text-xs text-muted-foreground">{row.detail}</div></> },
                 { key: "kg", header: "KG", cell: (row) => formatKg(row.kg), className: "text-right" },
+                { key: "price", header: "Precio/kg", cell: (row) => formatEur(row.price), className: "text-right" },
                 { key: "total", header: "Total", cell: (row) => formatEur(row.total), className: "text-right font-semibold" },
               ]}
             />

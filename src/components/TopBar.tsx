@@ -7,11 +7,13 @@ import { Activity, Command, Moon, Search, Sun } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeProvider";
 
 const ROUTE_META: Record<string, { label: string; subtitle: string }> = {
-  "/": { label: "Resumen", subtitle: "Vision general del mercado, ventas y confeccion" },
+  "/": { label: "Dashboard", subtitle: "Vision general del negocio" },
+  "/comercial": { label: "Comercial", subtitle: "Ventas, productos, clientes y trazabilidad" },
+  "/logistica": { label: "Logistica", subtitle: "Expediciones, transporte y control operativo" },
+  "/analisis": { label: "Analisis", subtitle: "Tendencias, comparativas y predicciones" },
   "/ventas": { label: "Ventas", subtitle: "Consulta detallada de ventas, facturas y clientes" },
   "/productos": { label: "Productos", subtitle: "Navega por tipo de factura, variedad, calibre y formato" },
   "/clientes": { label: "Clientes", subtitle: "Analisis de la cartera de clientes y su historial" },
-  "/confeccion": { label: "Confeccion", subtitle: "Consulta detallada de palets confeccionados" },
   "/tendencias": { label: "Tendencias", subtitle: "Patrones, maximos, minimos y variaciones en el tiempo" },
   "/comparar": { label: "Comparar", subtitle: "Selecciona campanas para comparar precios directamente" },
   "/predicciones": { label: "Predicciones", subtitle: "Proyeccion estimada para los proximos 12 meses" },

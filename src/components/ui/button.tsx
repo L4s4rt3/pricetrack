@@ -4,15 +4,15 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-semibold ring-offset-background transition-[background-color,border-color,color,box-shadow] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  "glass-control inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-semibold ring-offset-background transition-[background-color,border-color,color,box-shadow,transform] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
-        default: "border border-primary/20 bg-primary text-primary-foreground shadow-[0_8px_18px_hsl(var(--primary)/0.18)] hover:bg-primary/90",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        default: "border border-primary/25 bg-primary/88 text-primary-foreground shadow-[0_10px_24px_hsl(var(--primary)/0.18),inset_0_1px_0_hsl(0_0%_100%/0.20)] hover:border-primary/45 hover:bg-primary/82",
+        destructive: "border border-destructive/25 bg-destructive/88 text-destructive-foreground shadow-[var(--glass-shadow)] hover:bg-destructive/80",
         outline: "border border-[var(--glass-border)] bg-[var(--glass-bg)] text-foreground shadow-[var(--glass-shadow)] hover:border-[var(--glass-border-accent)] hover:bg-[var(--glass-bg-strong)]",
-        secondary: "border border-[var(--glass-border)] bg-secondary/70 text-secondary-foreground hover:bg-secondary",
-        ghost: "hover:bg-primary/8 hover:text-primary",
+        secondary: "border border-[var(--glass-border)] bg-[var(--glass-bg-strong)] text-secondary-foreground shadow-[var(--glass-shadow)] hover:border-[var(--glass-border-accent)] hover:bg-[var(--glass-bg-solid)]",
+        ghost: "border border-transparent bg-transparent hover:border-[var(--glass-border-accent)] hover:bg-[var(--glass-bg)] hover:text-primary hover:shadow-[var(--glass-shadow)]",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

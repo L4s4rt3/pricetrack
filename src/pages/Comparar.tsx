@@ -7,17 +7,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePrecios } from "@/hooks/usePrecios";
 import { CAMPAIGN_MONTHS, campaignLabel, formatEur, formatKg } from "@/lib/format";
 import { C, CHART_PANEL_CLASS, GRID, MARGIN, XAXIS, YAXIS, GlassTooltip } from "@/lib/chartTheme";
-import { weightedPrice } from "@/lib/parsers";
-import { SelectFilter, campaignRows, selectOptions, summaryStats, useEnrichedPrecios } from "./pageHelpers";
+import { SelectFilter, campaignRows, productPriceRows, productWeightedPrice, selectOptions, summaryStats, useEnrichedPrecios } from "./pageHelpers";
 
 const colors = [C.primary, C.orange, C.info, C.success, C.purple];
 
 export default function Comparar() {
   const { data } = usePrecios();
   const rows = useEnrichedPrecios(data);
+  const priceRows = useMemo(() => productPriceRows(rows), [rows]);
   const [product, setProduct] = useState("");
-  const products = selectOptions(rows, (row) => row.cls.product);
-  const baseRows = product ? rows.filter((row) => row.cls.product === product) : rows;
+  const products = selectOptions(priceRows, (row) => row.cls.product);
+  const baseRows = product ? priceRows.filter((row) => row.cls.product === product) : priceRows;
   const campaigns = Array.from(new Set(baseRows.map((row) => row.campaign))).sort((a, b) => b - a);
   const [selected, setSelected] = useState<number[]>([]);
   useEffect(() => {
@@ -29,13 +29,13 @@ export default function Comparar() {
   const active = selected;
   const chartData = CAMPAIGN_MONTHS.map((label, index) => {
     const month = index < 3 ? index + 10 : index - 2;
-    return Object.fromEntries([["label", label], ...active.map((campaign) => [campaignLabel(campaign), Number(weightedPrice(campaignRows(baseRows, campaign).filter((row) => row.month === month)).toFixed(3))])]);
+    return Object.fromEntries([["label", label], ...active.map((campaign) => [campaignLabel(campaign), Number(productWeightedPrice(campaignRows(baseRows, campaign).filter((row) => row.month === month)).toFixed(3))])]);
   });
   const tableRows = active.map((campaign) => ({ campaign, ...summaryStats(campaignRows(baseRows, campaign)) }));
 
   return (
     <div className="page-shell">
-      <PageHeader title="Comparar" subtitle="Comparativa mensual entre campanas" />
+      <PageHeader title="Comparar" subtitle="Comparativa mensual del precio/kg de producto" />
       <div className="section-toolbar"><SelectFilter label="Producto" value={product} options={products} onChange={setProduct} /></div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {campaigns.slice(0, 12).map((campaign) => {
@@ -48,7 +48,7 @@ export default function Comparar() {
       </div>
       {active.length < 2 && <p className="text-sm text-muted-foreground">Selecciona al menos dos campanas para comparar.</p>}
       <Card className="glass-accented">
-        <CardHeader><CardTitle className="text-lg">Precio mensual comparado</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-lg">Precio producto mensual comparado</CardTitle></CardHeader>
         <CardContent>
           <div className={CHART_PANEL_CLASS}>
             <ResponsiveContainer width="100%" height={340}>
@@ -65,9 +65,9 @@ export default function Comparar() {
       </Card>
       <DataTable rows={tableRows} getRowKey={(row) => row.campaign} columns={[
         { key: "campaign", header: "Campana", cell: (row) => campaignLabel(row.campaign) },
-        { key: "price", header: "Precio medio", cell: (row) => `${formatEur(row.price)}/kg`, className: "text-right" },
-        { key: "kg", header: "KG", cell: (row) => formatKg(row.kg), className: "text-right" },
-        { key: "revenue", header: "Facturacion", cell: (row) => formatEur(row.revenue), className: "text-right font-semibold" },
+        { key: "price", header: "Precio producto", cell: (row) => `${formatEur(row.price)}/kg`, className: "text-right" },
+        { key: "kg", header: "KG producto", cell: (row) => formatKg(row.productKg), className: "text-right" },
+        { key: "revenue", header: "Facturacion producto", cell: (row) => formatEur(row.productRevenue), className: "text-right font-semibold" },
       ]} />
     </div>
   );

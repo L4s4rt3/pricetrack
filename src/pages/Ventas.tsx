@@ -1,7 +1,7 @@
 import { useDeferredValue, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { FileText, Package, ShoppingCart, Users } from "lucide-react";
+import { Euro, FileText, Package, ReceiptText } from "lucide-react";
 import { DataTable } from "@/components/DataTable";
 import { KPICard } from "@/components/KPICard";
 import { PageHeader } from "@/components/PageHeader";
@@ -40,9 +40,9 @@ export default function Ventas() {
       <PageHeader title="Ventas" subtitle={`Lineas comerciales desde campana ${MIN_CAMPAIGN_LABEL}`} />
       <section className="metric-strip">
         <KPICard label="Registros" value={formatNum(stats.lines)} icon={FileText} />
-        <KPICard label="Facturacion" value={formatEur(stats.revenue)} icon={ShoppingCart} />
-        <KPICard label="Kilos" value={formatKg(stats.kg)} icon={Package} />
-        <KPICard label="Clientes" value={formatNum(stats.clients)} icon={Users} />
+        <KPICard label="Precio producto" value={`${formatEur(stats.price)}/kg`} icon={Euro} />
+        <KPICard label="Kilos producto" value={formatKg(stats.productKg)} hint={formatEur(stats.productRevenue)} icon={Package} />
+        <KPICard label="Otros conceptos" value={formatEur(stats.otherRevenue)} hint="Transporte, envases y ajustes" icon={ReceiptText} />
       </section>
       <SaleFilterPanel rows={rows} filters={filters} onChange={setFilters} />
       <Card className="glass-accented">
@@ -55,10 +55,10 @@ export default function Ventas() {
               { key: "date", header: "Campana / mes", cell: (row) => <>{campaignLabel(row.campaign)}<div className="text-xs text-muted-foreground">{row.month ? MONTHS[row.month - 1] : "Sin mes"}</div></> },
               { key: "doc", header: "Documento", cell: (row) => <>{row.documento || row.factura || "-"}<div className="text-xs text-muted-foreground">Lin. {row.lin || "-"}</div></> },
               { key: "client", header: "Cliente", cell: (row) => row.clientLabel },
-              { key: "product", header: "Producto", cell: (row) => <>{row.cls.product}<div className="max-w-sm text-xs text-muted-foreground">{row.cls.subproduct || row.product}</div></> },
+              { key: "product", header: "Concepto", cell: (row) => <>{row.cls.product}<div className="max-w-sm text-xs text-muted-foreground">{row.cls.type} · {row.cls.subproduct || row.product}</div></> },
               { key: "ref", header: "Referencia", cell: (row) => row.referencia || "-" },
               { key: "kg", header: "Kilos", cell: (row) => formatKg(row.kilos), className: "text-right" },
-              { key: "price", header: "Precio", cell: (row) => `${formatEur(row.price)}/kg`, className: "text-right" },
+              { key: "price", header: "Precio linea", cell: (row) => `${formatEur(row.price)}/kg`, className: "text-right" },
               { key: "total", header: "Total", cell: (row) => formatEur(row.base_iva), className: "text-right font-semibold" },
               { key: "actions", header: "", cell: (row) => <button className="text-xs font-semibold text-destructive hover:underline" onClick={() => deleteRow(row.id)}>Eliminar</button>, className: "text-right" },
             ]}

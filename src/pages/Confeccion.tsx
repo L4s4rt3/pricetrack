@@ -39,7 +39,7 @@ export default function Confeccion() {
     [rows]
   );
   const filtered = useMemo(() => rows.filter((row) => {
-    const haystack = [row.n_palet, row.tipo, row.producto_confeccionado, row.producto_base, row.variedad, row.calibre, row.tipo_caja, row.cliente_nombre, row.denominacion_social, row.situacion].join(" ").toLowerCase();
+    const haystack = [row.n_palet, row.tipo, row.producto_confeccionado, row.producto_base, row.variedad, row.calibre, row.tipo_caja, row.cliente_nombre, row.denominacion_social, row.situacion, row.fecha, row.lote, row.documento_limpio].join(" ").toLowerCase();
     if (search && !haystack.includes(search.toLowerCase())) return false;
     if (tipo && row.tipo !== tipo) return false;
     if (situacion && row.situacion !== situacion) return false;
@@ -65,8 +65,8 @@ export default function Confeccion() {
   }, new Map<string, Map<string, number>>()).entries());
 
   const exportCsv = () => {
-    const header = ["palet", "tipo", "producto", "variedad", "calibre", "cliente", "kg", "pvp_kg", "total", "situacion", "fecha"];
-    const body = filtered.map((row) => [row.n_palet, row.tipo, row.producto_confeccionado, row.variedad, row.calibre, row.cliente_nombre, row.kg_netos, row.pvp_kg, row.pvp_total, row.situacion, row.fecha]);
+    const header = ["fecha", "palet", "lote", "documento", "tipo", "producto", "variedad", "calibre", "cliente", "kg", "pvp_kg", "total", "situacion"];
+    const body = filtered.map((row) => [row.fecha, row.n_palet, row.lote, row.documento_limpio, row.tipo, row.producto_confeccionado, row.variedad, row.calibre, row.cliente_nombre, row.kg_netos, row.pvp_kg, row.pvp_total, row.situacion]);
     const csv = [header, ...body].map((line) => line.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -85,7 +85,7 @@ export default function Confeccion() {
       <section className="metric-strip">
         <KPICard label="Registros" value={formatNum(filtered.length)} icon={Table2} />
         <KPICard label="KG netos" value={formatKg(kg)} icon={Package} />
-        <KPICard label="Valor" value={formatEur(revenue)} icon={Package} />
+        <KPICard label="Valor confeccion" value={formatEur(revenue)} icon={Package} />
       </section>
       <FilterPanel title="Filtros" meta={`${formatNum(rows.length)} lineas`}>
         <FilterField label="Busqueda"><Input value={search} onChange={(event) => setSearch(event.target.value)} /></FilterField>
@@ -124,7 +124,9 @@ export default function Confeccion() {
             rows={page.pagedRows}
             getRowKey={(row) => row.id}
             columns={[
+              { key: "date", header: "Fecha", cell: (row) => row.fecha || "-" },
               { key: "palet", header: "Palet", cell: (row) => row.n_palet || "-" },
+              { key: "lot", header: "Lote", cell: (row) => <>{row.lote || "-"}<div className="text-xs text-muted-foreground">{row.documento_limpio || row.documento_venta_original || ""}</div></> },
               { key: "product", header: "Producto", cell: (row) => <>{row.producto_confeccionado}<div className="text-xs text-muted-foreground">{row.variedad} · {row.calibre} · {row.tipo_caja}</div></> },
               { key: "client", header: "Cliente", cell: (row) => row.cliente_nombre || row.denominacion_social || "-" },
               { key: "kg", header: "KG", cell: (row) => formatKg(row.kg_netos), className: "text-right" },

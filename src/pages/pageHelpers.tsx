@@ -50,6 +50,18 @@ export const initialSaleFilters: SaleFilters = {
 
 const enrichedRowsCache = new WeakMap<PrecioRow[], EnrichedPrecio[]>();
 
+function saleNaturalKey(row: PrecioRow) {
+  return [
+    row.documento,
+    row.factura,
+    row.lin,
+    row.referencia,
+    row.product,
+    row.kilos,
+    row.base_iva,
+  ].join("§");
+}
+
 export function useEnrichedPrecios(rows?: PrecioRow[]) {
   return useMemo(
     () => {
@@ -57,9 +69,16 @@ export function useEnrichedPrecios(rows?: PrecioRow[]) {
       const cached = enrichedRowsCache.get(rows);
       if (cached) return cached;
 
-      const enriched = rows
-        .filter(isVisibleRow)
-        .map((row) => {
+      const seen = new Set<string>();
+      const enriched: EnrichedPrecio[] = [];
+
+      rows.forEach((row) => {
+        if (!isVisibleRow(row)) return;
+
+        const key = saleNaturalKey(row);
+        if (seen.has(key)) return;
+        seen.add(key);
+
           const cls = getLineClassification(row);
           const clientLabel = getClientLabel(row);
           const searchText = [
@@ -76,14 +95,15 @@ export function useEnrichedPrecios(rows?: PrecioRow[]) {
             cls.format,
             cls.subproduct,
           ].join(" ");
-          return {
+
+          enriched.push({
             ...row,
             cls,
             campaign: getCampaignStart(row),
             clientLabel,
             searchText,
             searchKey: searchText.toLowerCase(),
-          };
+          });
         });
 
       enrichedRowsCache.set(rows, enriched);
@@ -118,6 +138,18 @@ export function filterSales(rows: EnrichedPrecio[], filters: SaleFilters) {
     if (filters.subproduct && row.cls.subproduct !== filters.subproduct) return false;
     return true;
   });
+}
+
+export function isProductPriceRow(row: EnrichedPrecio) {
+  return row.cls.type === "Producto";
+}
+
+export function productPriceRows(rows: EnrichedPrecio[]) {
+  return rows.filter(isProductPriceRow);
+}
+
+export function productWeightedPrice(rows: EnrichedPrecio[]) {
+  return weightedPrice(productPriceRows(rows));
 }
 
 export function SaleFilterPanel({
@@ -202,6 +234,8 @@ export function SelectFilter({
 export function summaryStats(rows: EnrichedPrecio[]) {
   let kg = 0;
   let revenue = 0;
+  let productKg = 0;
+  let productRevenue = 0;
   const clients = new Set<string>();
   const products = new Set<string>();
 
@@ -210,32 +244,43 @@ export function summaryStats(rows: EnrichedPrecio[]) {
     revenue += row.base_iva;
     if (row.clientLabel) clients.add(row.clientLabel);
     if (row.cls.product) products.add(row.cls.product);
+    if (isProductPriceRow(row)) {
+      productKg += row.kilos;
+      productRevenue += row.base_iva;
+    }
   });
 
   return {
     lines: rows.length,
     kg,
     revenue,
-    price: weightedPrice(rows),
+    productKg,
+    productRevenue,
+    otherRevenue: revenue - productRevenue,
+    price: productWeightedPrice(rows),
     clients: clients.size,
     products: products.size,
   };
 }
 
 export function groupRows<T extends string>(rows: EnrichedPrecio[], getKey: (row: EnrichedPrecio) => T) {
-  const map = new Map<T, { name: T; lines: number; refs: Set<string>; kg: number; revenue: number; price: number }>();
+  const map = new Map<T, { name: T; lines: number; refs: Set<string>; kg: number; revenue: number; priceKg: number; priceValue: number }>();
   rows.forEach((row) => {
     const key = getKey(row);
     if (!key) return;
-    const current = map.get(key) ?? { name: key, lines: 0, refs: new Set<string>(), kg: 0, revenue: 0, price: 0 };
+    const current = map.get(key) ?? { name: key, lines: 0, refs: new Set<string>(), kg: 0, revenue: 0, priceKg: 0, priceValue: 0 };
     current.lines += 1;
     current.refs.add(row.referencia);
     current.kg += row.kilos;
     current.revenue += row.base_iva;
+    if (isProductPriceRow(row) && row.kilos > 0 && (row.base_iva > 0 || row.price > 0)) {
+      current.priceKg += row.kilos;
+      current.priceValue += row.base_iva > 0 ? row.base_iva : row.price * row.kilos;
+    }
     map.set(key, current);
   });
   return Array.from(map.values())
-    .map((item) => ({ ...item, refsCount: item.refs.size, price: item.kg > 0 ? item.revenue / item.kg : 0 }))
+    .map((item) => ({ ...item, refsCount: item.refs.size, price: item.priceKg > 0 ? item.priceValue / item.priceKg : 0 }))
     .sort((a, b) => b.revenue - a.revenue);
 }
 

@@ -33,7 +33,7 @@ export default function Productos() {
       <section className="metric-strip">
         <KPICard label="Lineas" value={formatNum(stats.lines)} icon={Layers} />
         <KPICard label="Productos" value={formatNum(stats.products)} icon={Package} />
-        <KPICard label="Facturacion" value={formatEur(stats.revenue)} icon={ShoppingCart} />
+        <KPICard label="Facturacion producto" value={formatEur(stats.productRevenue)} hint={`${formatEur(stats.otherRevenue)} auxiliares`} icon={ShoppingCart} />
       </section>
       <SaleFilterPanel rows={rows} filters={filters} onChange={setFilters} compact />
       <div className="grid gap-4 xl:grid-cols-2">

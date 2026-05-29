@@ -1,14 +1,16 @@
 import { lazy, Suspense } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import { Toaster } from "@/components/ui/sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
+const Comercial = lazy(() => import("@/pages/Comercial"));
+const Logistica = lazy(() => import("@/pages/Logistica"));
+const Analisis = lazy(() => import("@/pages/Analisis"));
 const Ventas = lazy(() => import("@/pages/Ventas"));
 const Productos = lazy(() => import("@/pages/Productos"));
 const Clientes = lazy(() => import("@/pages/Clientes"));
-const Confeccion = lazy(() => import("@/pages/Confeccion"));
 const Tendencias = lazy(() => import("@/pages/Tendencias"));
 const Comparar = lazy(() => import("@/pages/Comparar"));
 const Predicciones = lazy(() => import("@/pages/Predicciones"));
@@ -35,10 +37,13 @@ export default function App() {
       <Routes>
         <Route element={<AppLayout />}>
           <Route index element={<Suspense fallback={<PageLoader />}><Dashboard /></Suspense>} />
+          <Route path="comercial" element={<Suspense fallback={<PageLoader />}><Comercial /></Suspense>} />
+          <Route path="logistica" element={<Suspense fallback={<PageLoader />}><Logistica /></Suspense>} />
+          <Route path="analisis" element={<Suspense fallback={<PageLoader />}><Analisis /></Suspense>} />
           <Route path="ventas" element={<Suspense fallback={<PageLoader />}><Ventas /></Suspense>} />
           <Route path="productos" element={<Suspense fallback={<PageLoader />}><Productos /></Suspense>} />
           <Route path="clientes" element={<Suspense fallback={<PageLoader />}><Clientes /></Suspense>} />
-          <Route path="confeccion" element={<Suspense fallback={<PageLoader />}><Confeccion /></Suspense>} />
+          <Route path="confeccion" element={<Navigate to="/comercial" replace />} />
           <Route path="tendencias" element={<Suspense fallback={<PageLoader />}><Tendencias /></Suspense>} />
           <Route path="comparar" element={<Suspense fallback={<PageLoader />}><Comparar /></Suspense>} />
           <Route path="predicciones" element={<Suspense fallback={<PageLoader />}><Predicciones /></Suspense>} />

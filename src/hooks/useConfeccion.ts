@@ -8,25 +8,30 @@ const PAGE_CONCURRENCY = 8;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function normalizeRow(row: Record<string, any>): ConfeccionRow {
+  const kgNetos = Number(row.kg_netos ?? 0);
+  const total = Number(row.pvp_total ?? row.base_iva ?? 0);
+  const sourcePvpKg = Number(row.pvp_kg ?? 0);
+  const sourcePvp = Number(row.pvp ?? 0);
+  const pvpKg = sourcePvpKg > 0.05 ? sourcePvpKg : sourcePvp > 0.05 ? sourcePvp : kgNetos ? total / kgNetos : 0;
   return {
     id: row.id ?? 0,
-    n_palet: row.n_palet ?? row.n__palet ?? "",
-    tipo: row.tipo ?? "",
+    n_palet: row.n_palet ?? row["nº_palet"] ?? "",
+    tipo: row.tipo || row.tipo_palet || "",
     producto_confeccionado: row.producto_confeccionado ?? "",
     producto_base: row.producto_base ?? "",
     variedad: row.variedad ?? "",
     calibre: row.calibre ?? "",
     tipo_caja: row.tipo_caja ?? "",
-    cajas: row.cajas ?? 0,
-    kg_netos: row.kg_netos ?? 0,
-    kg_facturados: row.kg_facturados ?? 0,
-    pvp_kg: row.pvp_kg ?? 0,
-    pvp_total: row.pvp_total ?? 0,
+    cajas: Number(row.cajas ?? 0),
+    kg_netos: kgNetos,
+    kg_facturados: Number(row.kg_facturados ?? 0),
+    pvp_kg: pvpKg,
+    pvp_total: total || kgNetos * pvpKg || 0,
     cliente_nombre: row.cliente_nombre ?? "",
     denominacion_social: row.denominacion_social ?? "",
     cliente_id: row.cliente_id ?? "",
     situacion: row.situacion ?? "",
-    fecha: row.fecha ?? "",
+    fecha: row.fecha ?? row.fecha_confeccion ?? "",
     lote: row.lote ?? "",
     documento_venta_original: row.documento_venta_original ?? "",
     documento_limpio: row.documento_limpio ?? "",
@@ -39,10 +44,10 @@ export function useConfeccion() {
     queryKey: ["confeccion", MIN_CONFECCION_DATE],
     queryFn: async () => {
       const firstPage = await supabase
-        .from("ventas_confeccion")
+        .from("ventas_confeccion_detalle")
         .select(CONFECCION_SELECT, { count: "exact" })
-        .gte("fecha", MIN_CONFECCION_DATE)
-        .order("fecha", { ascending: false })
+        .gte("fecha_confeccion", MIN_CONFECCION_DATE)
+        .order("fecha_confeccion", { ascending: false })
         .order("id", { ascending: false })
         .range(0, PAGE_SIZE - 1);
 
@@ -56,10 +61,10 @@ export function useConfeccion() {
       const fetchPage = async (from: number) => {
         const to = from + PAGE_SIZE - 1;
         const { data, error } = await supabase
-          .from("ventas_confeccion")
+          .from("ventas_confeccion_detalle")
           .select(CONFECCION_SELECT)
-          .gte("fecha", MIN_CONFECCION_DATE)
-          .order("fecha", { ascending: false })
+          .gte("fecha_confeccion", MIN_CONFECCION_DATE)
+          .order("fecha_confeccion", { ascending: false })
           .order("id", { ascending: false })
           .range(from, to);
 

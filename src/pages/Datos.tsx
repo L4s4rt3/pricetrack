@@ -113,8 +113,9 @@ export default function Datos() {
       </PageHeader>
       <section className="metric-strip">
         <KPICard label="Registros" value={formatNum(stats.lines)} icon={Database} />
-        <KPICard label="Kilos" value={formatKg(stats.kg)} icon={Database} />
-        <KPICard label="Base IVA" value={formatEur(stats.revenue)} icon={Database} />
+        <KPICard label="Kilos producto" value={formatKg(stats.productKg)} icon={Database} />
+        <KPICard label="Base producto" value={formatEur(stats.productRevenue)} icon={Database} />
+        <KPICard label="Otros conceptos" value={formatEur(stats.otherRevenue)} icon={Database} />
       </section>
       <SaleFilterPanel rows={rows} filters={filters} onChange={setFilters} />
       <Card className="glass-accented">
@@ -128,7 +129,7 @@ export default function Datos() {
             { key: "product", header: "Producto", cell: (row) => <>{row.product}<div className="text-xs text-muted-foreground">{row.category}</div></> },
             { key: "class", header: "Clasificacion", cell: (row) => <>{row.cls.type}<div className="text-xs text-muted-foreground">{row.cls.subproduct}</div></> },
             { key: "kg", header: "KG", cell: (row) => formatKg(row.kilos), className: "text-right" },
-            { key: "price", header: "Precio", cell: (row) => formatEur(row.price), className: "text-right" },
+            { key: "price", header: "Precio linea", cell: (row) => formatEur(row.price), className: "text-right" },
             { key: "total", header: "Base IVA", cell: (row) => formatEur(row.base_iva), className: "text-right font-semibold" },
           ]} getRowKey={(row) => row.id} />
         </CardContent>

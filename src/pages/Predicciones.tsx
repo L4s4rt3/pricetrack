@@ -9,20 +9,20 @@ import { usePrecios } from "@/hooks/usePrecios";
 import { formatEur } from "@/lib/format";
 import { C, CHART_PANEL_CLASS, GRID, MARGIN, XAXIS, YAXIS, GlassTooltip, barFill } from "@/lib/chartTheme";
 import { predictPrices } from "@/lib/predictions";
-import { weightedPrice } from "@/lib/parsers";
-import { SelectFilter, selectOptions, useEnrichedPrecios } from "./pageHelpers";
+import { SelectFilter, productPriceRows, productWeightedPrice, selectOptions, useEnrichedPrecios } from "./pageHelpers";
 
 export default function Predicciones() {
   const { data } = usePrecios();
   const rows = useEnrichedPrecios(data);
+  const priceRows = useMemo(() => productPriceRows(rows), [rows]);
   const [product, setProduct] = useState("Naranja");
-  const products = selectOptions(rows, (row) => row.cls.product);
-  const baseRows = product ? rows.filter((row) => row.cls.product === product) : rows;
+  const products = selectOptions(priceRows, (row) => row.cls.product);
+  const baseRows = product ? priceRows.filter((row) => row.cls.product === product) : priceRows;
   const monthlyHistory = useMemo(() => {
     const keys = Array.from(new Set(baseRows.map((row) => `${row.year}-${row.month}`))).sort();
     return keys.map((key) => {
       const [year, month] = key.split("-").map(Number);
-      return { year, month, price: weightedPrice(baseRows.filter((row) => row.year === year && row.month === month)) };
+      return { year, month, price: productWeightedPrice(baseRows.filter((row) => row.year === year && row.month === month)) };
     }).filter((item) => item.month && item.price > 0);
   }, [baseRows]);
   const prediction = predictPrices(monthlyHistory, 12);
@@ -37,15 +37,15 @@ export default function Predicciones() {
 
   return (
     <div className="page-shell">
-      <PageHeader title="Predicciones" subtitle="Proyeccion estadistica basada en historico mensual" />
+      <PageHeader title="Predicciones" subtitle="Proyeccion estadistica del precio/kg de producto" />
       <div className="section-toolbar"><SelectFilter label="Producto" value={product} options={products} onChange={setProduct} /></div>
       <section className="metric-strip">
-        <KPICard label="Precio estimado" value={`${formatEur(next)}/kg`} icon={TrendingUp} />
+        <KPICard label="Precio producto estimado" value={`${formatEur(next)}/kg`} icon={TrendingUp} />
         <KPICard label="Tendencia" value={`${prediction.trend >= 0 ? "+" : ""}${prediction.trend.toFixed(3)}`} hint="pendiente mensual" icon={Activity} trend={prediction.trend >= 0 ? "up" : "down"} />
         <KPICard label="Confianza" value={`${confidence.toFixed(0)}%`} icon={Gauge} />
       </section>
       <Card className="glass-accented">
-        <CardHeader><CardTitle className="text-lg">Forecast 12 meses</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-lg">Forecast producto 12 meses</CardTitle></CardHeader>
         <CardContent>
           <div className={CHART_PANEL_CLASS}>
             <ResponsiveContainer width="100%" height={340}>
@@ -64,7 +64,7 @@ export default function Predicciones() {
       </Card>
       <DataTable rows={chartData} columns={[
         { key: "month", header: "Mes", cell: (row) => row.label },
-        { key: "pred", header: "Precio previsto", cell: (row) => `${formatEur(row.previsto)}/kg`, className: "text-right font-semibold" },
+        { key: "pred", header: "Precio producto previsto", cell: (row) => `${formatEur(row.previsto)}/kg`, className: "text-right font-semibold" },
         { key: "low", header: "Rango inferior", cell: (row) => formatEur(row.inferior), className: "text-right" },
         { key: "high", header: "Rango superior", cell: (row) => formatEur(row.superior), className: "text-right" },
       ]} />

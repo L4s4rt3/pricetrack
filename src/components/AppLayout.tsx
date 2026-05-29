@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Citrus, Database, FileText, GitCompareArrows, LayoutDashboard, LineChart, Package, Table2, TrendingUp, Users } from "lucide-react";
+import { BarChart3, Citrus, Database, LayoutDashboard, ShoppingBag, Truck } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -24,26 +24,12 @@ type NavItem = {
   icon: typeof LayoutDashboard;
 };
 
-const navGroups: Array<{ label: string; items: NavItem[] }> = [
-  { label: "Principal", items: [{ to: "/", label: "Resumen", icon: LayoutDashboard }] },
-  {
-    label: "Operaciones",
-    items: [
-      { to: "/ventas", label: "Ventas", icon: FileText },
-      { to: "/productos", label: "Productos", icon: Package },
-      { to: "/clientes", label: "Clientes", icon: Users },
-      { to: "/confeccion", label: "Confeccion", icon: Table2 },
-    ],
-  },
-  {
-    label: "Analisis",
-    items: [
-      { to: "/tendencias", label: "Tendencias", icon: TrendingUp },
-      { to: "/comparar", label: "Comparar", icon: GitCompareArrows },
-      { to: "/predicciones", label: "Predecir", icon: LineChart },
-    ],
-  },
-  { label: "Datos", items: [{ to: "/datos", label: "Tabla", icon: Database }] },
+const navItems: NavItem[] = [
+  { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/comercial", label: "Comercial", icon: ShoppingBag },
+  { to: "/logistica", label: "Logistica", icon: Truck },
+  { to: "/analisis", label: "Analisis", icon: BarChart3 },
+  { to: "/datos", label: "Datos", icon: Database },
 ];
 
 export default function AppLayout() {
@@ -71,11 +57,10 @@ export default function AppLayout() {
         </SidebarHeader>
 
         <SidebarContent className="sidebar-nav-panel px-3 pb-4 pt-2">
-          {navGroups.map((group) => (
-            <SidebarGroup key={group.label} className="nav-section">
-              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+          <SidebarGroup className="nav-section">
+            <SidebarGroupLabel>Areas</SidebarGroupLabel>
               <SidebarMenu>
-                {group.items.map((item) => {
+                {navItems.map((item) => {
                   const Icon = item.icon;
                   return (
                     <SidebarMenuItem key={item.to}>
@@ -89,8 +74,7 @@ export default function AppLayout() {
                   );
                 })}
               </SidebarMenu>
-            </SidebarGroup>
-          ))}
+          </SidebarGroup>
         </SidebarContent>
 
         <SidebarFooter className="sidebar-status-wrap p-3">
