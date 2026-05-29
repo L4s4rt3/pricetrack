@@ -1,0 +1,53 @@
+export const MIN_CAMPAIGN_START = 2019;
+export const MIN_CAMPAIGN_LABEL = "2019/20";
+export const MIN_CONFECCION_DATE = "2019-10-01";
+
+export const PRECIOS_SELECT = [
+  "id",
+  "producto",
+  "categoria",
+  "precio",
+  "unidad",
+  "ano",
+  "mes",
+  "notas",
+  "cliente",
+  "denominacion_social",
+  "referencia",
+  "kilos",
+  "unidades",
+  "litros",
+  "tarifa",
+  "coste_adic",
+  "base_iva",
+  "documento",
+  "factura",
+  "fecha_fra",
+  "lin",
+  "created_at",
+].join(",");
+
+export const CONFECCION_SELECT = [
+  "id",
+  "n_palet",
+  "n__palet",
+  "tipo",
+  "producto_confeccionado",
+  "producto_base",
+  "variedad",
+  "calibre",
+  "tipo_caja",
+  "cajas",
+  "kg_netos",
+  "kg_facturados",
+  "pvp_kg",
+  "pvp_total",
+  "cliente_nombre",
+  "denominacion_social",
+  "cliente_id",
+  "situacion",
+  "fecha",
+  "lote",
+  "documento_venta_original",
+  "documento_limpio",
+].join(",");
