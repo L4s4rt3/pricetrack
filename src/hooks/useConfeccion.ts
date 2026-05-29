@@ -4,7 +4,7 @@ import { CONFECCION_SELECT, MIN_CONFECCION_DATE } from "@/lib/campaigns";
 import type { ConfeccionRow } from "@/lib/types";
 
 const PAGE_SIZE = 1000;
-const PAGE_CONCURRENCY = 8;
+const PAGE_CONCURRENCY = 12;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function normalizeRow(row: Record<string, any>): ConfeccionRow {
@@ -80,8 +80,8 @@ export function useConfeccion() {
 
       return rows.map(normalizeRow);
     },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
+    staleTime: 20 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 }

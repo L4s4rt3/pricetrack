@@ -10,7 +10,9 @@ import {
   getClientLabel,
   getClientSearchText,
   getLineClassification,
+  isCountableSaleRow,
   isVisibleRow,
+  saleLineValue,
   weightedPrice,
 } from "@/lib/parsers";
 import type { LineClassification, PrecioRow } from "@/lib/types";
@@ -30,9 +32,11 @@ export interface SaleFilters {
   cliente: string;
   type: string;
   base: string;
+  article: string;
   variety: string;
   caliber: string;
   format: string;
+  confeccion: string;
   subproduct: string;
 }
 
@@ -43,9 +47,11 @@ export const initialSaleFilters: SaleFilters = {
   cliente: "",
   type: "",
   base: "",
+  article: "",
   variety: "",
   caliber: "",
   format: "",
+  confeccion: "",
   subproduct: "",
 };
 
@@ -127,18 +133,129 @@ export function selectOptions(rows: EnrichedPrecio[], pick: (row: EnrichedPrecio
 export function filterSales(rows: EnrichedPrecio[], filters: SaleFilters) {
   const search = filters.search.trim().toLowerCase();
   return rows.filter((row) => {
-    if (search && !row.searchKey.includes(search)) return false;
-    if (filters.campaign && String(row.campaign) !== filters.campaign) return false;
-    if (filters.month && String(row.month ?? "") !== filters.month) return false;
-    if (filters.cliente && row.clientLabel !== filters.cliente) return false;
-    if (filters.type && row.cls.type !== filters.type) return false;
-    if (filters.base && row.cls.product !== filters.base) return false;
-    if (filters.variety && row.cls.variety !== filters.variety) return false;
-    if (filters.caliber && row.cls.caliber !== filters.caliber) return false;
-    if (filters.format && row.cls.format !== filters.format) return false;
-    if (filters.subproduct && row.cls.subproduct !== filters.subproduct) return false;
-    return true;
+    return matchesSaleFilters(row, filters, search);
   });
+}
+
+type SaleFilterKey = Exclude<keyof SaleFilters, "search">;
+type SaleFilterOptions = {
+  campaigns: string[];
+  months: string[];
+  clients: string[];
+  types: string[];
+  products: string[];
+  articles: string[];
+  varieties: string[];
+  calibers: string[];
+  formats: string[];
+  confecciones: string[];
+  subproducts: string[];
+};
+
+const saleFilterOrder: SaleFilterKey[] = ["campaign", "month", "cliente", "type", "base", "article", "variety", "caliber", "format", "confeccion", "subproduct"];
+
+const optionKeyByFilter: Record<SaleFilterKey, keyof SaleFilterOptions> = {
+  campaign: "campaigns",
+  month: "months",
+  cliente: "clients",
+  type: "types",
+  base: "products",
+  article: "articles",
+  variety: "varieties",
+  caliber: "calibers",
+  format: "formats",
+  confeccion: "confecciones",
+  subproduct: "subproducts",
+};
+
+function rowFilterValue(row: EnrichedPrecio, key: SaleFilterKey) {
+  switch (key) {
+    case "campaign":
+      return String(row.campaign);
+    case "month":
+      return String(row.month ?? "");
+    case "cliente":
+      return row.clientLabel;
+    case "type":
+      return row.cls.type;
+    case "base":
+      return row.cls.product;
+    case "article":
+      return row.product;
+    case "variety":
+      return row.cls.variety;
+    case "caliber":
+      return row.cls.caliber;
+    case "format":
+      return row.cls.format;
+    case "confeccion":
+      return row.cls.type === "Servicio" && row.cls.variety === "Confeccion" ? "Confeccion" : "";
+    case "subproduct":
+      return row.cls.subproduct;
+  }
+}
+
+function matchesSaleFilters(row: EnrichedPrecio, filters: SaleFilters, search = filters.search.trim().toLowerCase(), ignore?: SaleFilterKey) {
+  if (search && !row.searchKey.includes(search)) return false;
+  return saleFilterOrder.every((key) => key === ignore || !filters[key] || rowFilterValue(row, key) === filters[key]);
+}
+
+export function saleFilterOptionSets(rows: EnrichedPrecio[], filters: SaleFilters): SaleFilterOptions {
+  const optionSets: Record<keyof SaleFilterOptions, Set<string>> = {
+    campaigns: new Set(),
+    months: new Set(),
+    clients: new Set(),
+    types: new Set(),
+    products: new Set(),
+    articles: new Set(),
+    varieties: new Set(),
+    calibers: new Set(),
+    formats: new Set(),
+    confecciones: new Set(),
+    subproducts: new Set(),
+  };
+
+  const add = (key: keyof SaleFilterOptions, value: string | number | null | undefined) => {
+    if (value !== "" && value !== null && value !== undefined) optionSets[key].add(String(value));
+  };
+
+  rows.forEach((row) => {
+    saleFilterOrder.forEach((filterKey) => {
+      if (!matchesSaleFilters(row, filters, undefined, filterKey)) return;
+      add(optionKeyByFilter[filterKey], rowFilterValue(row, filterKey));
+    });
+  });
+
+  const sorted = (key: keyof SaleFilterOptions) => (
+    Array.from(optionSets[key]).sort((a, b) => a.localeCompare(b, "es", { numeric: true }))
+  );
+
+  return {
+    campaigns: sorted("campaigns").sort((a, b) => Number(b) - Number(a)),
+    months: sorted("months"),
+    clients: sorted("clients"),
+    types: sorted("types"),
+    products: sorted("products"),
+    articles: sorted("articles"),
+    varieties: sorted("varieties"),
+    calibers: sorted("calibers"),
+    formats: sorted("formats"),
+    confecciones: sorted("confecciones"),
+    subproducts: sorted("subproducts"),
+  };
+}
+
+export function pruneInvalidSaleSubfilters(rows: EnrichedPrecio[], filters: SaleFilters, changedKey: keyof SaleFilters) {
+  const changedIndex = changedKey === "search" ? -1 : saleFilterOrder.indexOf(changedKey);
+  const next = { ...filters };
+
+  saleFilterOrder.slice(changedIndex + 1).forEach((key) => {
+    if (!next[key]) return;
+    const options = saleFilterOptionSets(rows, next)[optionKeyByFilter[key]];
+    if (!options.includes(next[key])) next[key] = "";
+  });
+
+  return next;
 }
 
 export function isProductPriceRow(row: EnrichedPrecio) {
@@ -146,7 +263,7 @@ export function isProductPriceRow(row: EnrichedPrecio) {
 }
 
 export function productPriceRows(rows: EnrichedPrecio[]) {
-  return rows.filter(isProductPriceRow);
+  return rows.filter((row) => isProductPriceRow(row) && isCountableSaleRow(row));
 }
 
 export function productWeightedPrice(rows: EnrichedPrecio[]) {
@@ -164,20 +281,13 @@ export function SaleFilterPanel({
   onChange: (filters: SaleFilters) => void;
   compact?: boolean;
 }) {
-  const set = (key: keyof SaleFilters, value: string) => onChange({ ...filters, [key]: value });
+  const set = (key: keyof SaleFilters, value: string) => {
+    const next = { ...filters, [key]: value };
+    onChange(pruneInvalidSaleSubfilters(rows, next, key));
+  };
   const optionSets = useMemo(
-    () => ({
-      campaigns: selectOptions(rows, (row) => row.campaign).sort((a, b) => Number(b) - Number(a)),
-      months: selectOptions(rows, (row) => row.month),
-      clients: selectOptions(rows, (row) => row.clientLabel),
-      types: selectOptions(rows, (row) => row.cls.type),
-      products: selectOptions(rows, (row) => row.cls.product),
-      varieties: selectOptions(rows, (row) => row.cls.variety),
-      calibers: selectOptions(rows, (row) => row.cls.caliber),
-      formats: selectOptions(rows, (row) => row.cls.format),
-      subproducts: selectOptions(rows, (row) => row.cls.subproduct),
-    }),
-    [rows]
+    () => saleFilterOptionSets(rows, filters),
+    [rows, filters]
   );
 
   return (
@@ -193,9 +303,11 @@ export function SaleFilterPanel({
       {!compact && <SelectFilter label="Cliente" value={filters.cliente} options={optionSets.clients} onChange={(v) => set("cliente", v)} />}
       <SelectFilter label="Tipo" value={filters.type} options={optionSets.types} onChange={(v) => set("type", v)} />
       <SelectFilter label="Producto" value={filters.base} options={optionSets.products} onChange={(v) => set("base", v)} />
+      {!compact && <SelectFilter label="Articulo" value={filters.article} options={optionSets.articles} onChange={(v) => set("article", v)} />}
       <SelectFilter label="Variedad" value={filters.variety} options={optionSets.varieties} onChange={(v) => set("variety", v)} />
       {!compact && <SelectFilter label="Calibre" value={filters.caliber} options={optionSets.calibers} onChange={(v) => set("caliber", v)} />}
       {!compact && <SelectFilter label="Formato" value={filters.format} options={optionSets.formats} onChange={(v) => set("format", v)} />}
+      {!compact && <SelectFilter label="Confeccion" value={filters.confeccion} options={optionSets.confecciones} onChange={(v) => set("confeccion", v)} />}
       {!compact && <SelectFilter label="Subproducto" value={filters.subproduct} options={optionSets.subproducts} onChange={(v) => set("subproduct", v)} />}
       <Button variant="outline" className="filter-reset h-10" onClick={() => onChange(initialSaleFilters)}>
         <RotateCcw className="h-4 w-4" />
@@ -246,13 +358,17 @@ export function summaryStats(rows: EnrichedPrecio[]) {
   const products = new Set<string>();
 
   rows.forEach((row) => {
-    kg += row.kilos;
-    revenue += row.base_iva;
     if (row.clientLabel) clients.add(row.clientLabel);
     if (row.cls.product) products.add(row.cls.product);
-    if (isProductPriceRow(row)) {
+
+    if (isCountableSaleRow(row)) {
+      kg += row.kilos;
+      revenue += saleLineValue(row);
+    }
+
+    if (isProductPriceRow(row) && isCountableSaleRow(row)) {
       productKg += row.kilos;
-      productRevenue += row.base_iva;
+      productRevenue += saleLineValue(row);
     }
   });
 
@@ -277,11 +393,15 @@ export function groupRows<T extends string>(rows: EnrichedPrecio[], getKey: (row
     const current = map.get(key) ?? { name: key, lines: 0, refs: new Set<string>(), kg: 0, revenue: 0, priceKg: 0, priceValue: 0 };
     current.lines += 1;
     current.refs.add(row.referencia);
-    current.kg += row.kilos;
-    current.revenue += row.base_iva;
-    if (isProductPriceRow(row) && row.kilos > 0 && (row.base_iva > 0 || row.price > 0)) {
+
+    if (isCountableSaleRow(row)) {
+      current.kg += row.kilos;
+      current.revenue += saleLineValue(row);
+    }
+
+    if (isProductPriceRow(row) && isCountableSaleRow(row)) {
       current.priceKg += row.kilos;
-      current.priceValue += row.base_iva > 0 ? row.base_iva : row.price * row.kilos;
+      current.priceValue += saleLineValue(row);
     }
     map.set(key, current);
   });

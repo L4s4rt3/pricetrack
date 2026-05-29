@@ -433,6 +433,7 @@
       hsl(var(--glass-bg));
     box-shadow: var(--glass-shadow), var(--glass-inner);
     backdrop-filter: blur(14px) saturate(1.15);
+    contain: layout paint;
   }
   .table-scroll { scrollbar-gutter: stable both-edges; }
   .data-table-shell thead th {
@@ -445,7 +446,10 @@
     backdrop-filter: blur(10px);
     border-bottom: 1px solid hsl(var(--glass-border-accent));
   }
-  .table-row { transition: background-color 0.12s ease; }
+  .table-row {
+    contain: paint;
+    transition: background-color 0.12s ease;
+  }
   .table-row:nth-child(even) { background: hsl(0 0% 100% / 0.10); }
   .table-row:hover { background: hsl(var(--primary) / 0.06); }
   .data-table-shell td,
@@ -482,10 +486,16 @@
     @apply mx-auto w-full max-w-[1500px] space-y-5;
     contain: layout paint;
   }
+  .route-page {
+    animation: routeEnter 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+    transform-origin: 50% 0;
+    will-change: opacity, transform;
+  }
 
   /* ── App scroll background ── */
   .app-scroll {
     position: relative;
+    transform: translateZ(0);
     background:
       radial-gradient(60rem 36rem at 90% -10%, hsl(35 40% 35% / 0.05), transparent 60%),
       radial-gradient(45rem 30rem at 15% 110%, hsl(30 30% 30% / 0.04), transparent 62%),
@@ -623,20 +633,33 @@
   .command-search {
     position: relative;
     overflow: hidden;
+    box-sizing: border-box;
     border: 1px solid hsl(var(--glass-border));
     background:
       linear-gradient(180deg, hsl(0 0% 100% / 0.10), transparent),
       hsl(var(--glass-bg));
     box-shadow: var(--glass-shadow), var(--glass-inner);
     backdrop-filter: blur(18px) saturate(1.20);
+    transform: none !important;
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
   }
   .command-search > * {
     position: relative;
     z-index: 1;
   }
-  .command-search,
-  .command-search * {
-    transform: translate3d(0, 0, 0);
+  .command-search:hover,
+  .command-search:focus-visible {
+    border-color: hsl(var(--glass-border-accent));
+    background:
+      linear-gradient(180deg, hsl(0 0% 100% / 0.16), transparent),
+      hsl(var(--glass-bg-strong));
+    box-shadow: var(--glass-shadow), var(--glass-inner), 0 0 0 3px hsl(var(--primary) / 0.08);
+    color: hsl(var(--foreground));
+    transform: none !important;
+  }
+  .command-search > *,
+  .command-search svg {
+    transform: none !important;
   }
 
   /* ── Skeleton ── */
@@ -648,6 +671,7 @@
       linear-gradient(180deg, hsl(0 0% 100% / 0.10), transparent),
       hsl(var(--muted) / 0.55);
     box-shadow: var(--glass-shadow);
+    animation: skeletonIn 0.18s ease-out both;
   }
   .skeleton-glass::after {
     content: "";
@@ -829,6 +853,10 @@
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+@keyframes routeEnter {
+  from { opacity: 0; transform: translate3d(0, 8px, 0) scale(0.995); }
+  to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
 @keyframes slideIn {
   from { opacity: 0; transform: translateY(12px) scale(0.99); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
@@ -843,6 +871,10 @@
 }
 @keyframes skeletonSweep {
   to { transform: translateX(100%); }
+}
+@keyframes skeletonIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 @keyframes glowPulse {
   0%, 100% { opacity: 1; }

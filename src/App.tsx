@@ -1,21 +1,23 @@
-import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Suspense, useEffect } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import { Toaster } from "@/components/ui/sonner";
 import { Skeleton } from "@/components/ui/skeleton";
+import { pageLoaders, pagePreloaders } from "@/lib/pagePreloads";
+import { lazyWithPreload, scheduleRoutePreload } from "@/lib/routePreload";
 
-const Dashboard = lazy(() => import("@/pages/Dashboard"));
-const Comercial = lazy(() => import("@/pages/Comercial"));
-const Logistica = lazy(() => import("@/pages/Logistica"));
-const Analisis = lazy(() => import("@/pages/Analisis"));
-const Ventas = lazy(() => import("@/pages/Ventas"));
-const Productos = lazy(() => import("@/pages/Productos"));
-const Clientes = lazy(() => import("@/pages/Clientes"));
-const Tendencias = lazy(() => import("@/pages/Tendencias"));
-const Comparar = lazy(() => import("@/pages/Comparar"));
-const Predicciones = lazy(() => import("@/pages/Predicciones"));
-const Datos = lazy(() => import("@/pages/Datos"));
-const NotFound = lazy(() => import("@/pages/NotFound"));
+const Dashboard = lazyWithPreload(pageLoaders["/"]);
+const Comercial = lazyWithPreload(pageLoaders["/comercial"]);
+const Logistica = lazyWithPreload(pageLoaders["/logistica"]);
+const Analisis = lazyWithPreload(pageLoaders["/analisis"]);
+const Ventas = lazyWithPreload(pageLoaders["/ventas"]);
+const Productos = lazyWithPreload(pageLoaders["/productos"]);
+const Clientes = lazyWithPreload(pageLoaders["/clientes"]);
+const Tendencias = lazyWithPreload(pageLoaders["/tendencias"]);
+const Comparar = lazyWithPreload(pageLoaders["/comparar"]);
+const Predicciones = lazyWithPreload(pageLoaders["/predicciones"]);
+const Datos = lazyWithPreload(pageLoaders["/datos"]);
+const NotFound = lazyWithPreload(pageLoaders["*"]);
 
 function PageLoader() {
   return (
@@ -32,25 +34,33 @@ function PageLoader() {
 }
 
 export default function App() {
+  const location = useLocation();
+
+  useEffect(() => {
+    scheduleRoutePreload(pagePreloaders);
+  }, []);
+
   return (
     <>
-      <Routes>
-        <Route element={<AppLayout />}>
-          <Route index element={<Suspense fallback={<PageLoader />}><Dashboard /></Suspense>} />
-          <Route path="comercial" element={<Suspense fallback={<PageLoader />}><Comercial /></Suspense>} />
-          <Route path="logistica" element={<Suspense fallback={<PageLoader />}><Logistica /></Suspense>} />
-          <Route path="analisis" element={<Suspense fallback={<PageLoader />}><Analisis /></Suspense>} />
-          <Route path="ventas" element={<Suspense fallback={<PageLoader />}><Ventas /></Suspense>} />
-          <Route path="productos" element={<Suspense fallback={<PageLoader />}><Productos /></Suspense>} />
-          <Route path="clientes" element={<Suspense fallback={<PageLoader />}><Clientes /></Suspense>} />
-          <Route path="confeccion" element={<Navigate to="/comercial" replace />} />
-          <Route path="tendencias" element={<Suspense fallback={<PageLoader />}><Tendencias /></Suspense>} />
-          <Route path="comparar" element={<Suspense fallback={<PageLoader />}><Comparar /></Suspense>} />
-          <Route path="predicciones" element={<Suspense fallback={<PageLoader />}><Predicciones /></Suspense>} />
-          <Route path="datos" element={<Suspense fallback={<PageLoader />}><Datos /></Suspense>} />
-          <Route path="*" element={<Suspense fallback={<PageLoader />}><NotFound /></Suspense>} />
-        </Route>
-      </Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes location={location}>
+          <Route element={<AppLayout />}>
+            <Route index element={<div className="route-page" key="dashboard"><Dashboard /></div>} />
+            <Route path="comercial" element={<div className="route-page" key="comercial"><Comercial /></div>} />
+            <Route path="logistica" element={<div className="route-page" key="logistica"><Logistica /></div>} />
+            <Route path="analisis" element={<div className="route-page" key="analisis"><Analisis /></div>} />
+            <Route path="ventas" element={<div className="route-page" key="ventas"><Ventas /></div>} />
+            <Route path="productos" element={<div className="route-page" key="productos"><Productos /></div>} />
+            <Route path="clientes" element={<div className="route-page" key="clientes"><Clientes /></div>} />
+            <Route path="confeccion" element={<Navigate to="/comercial" replace />} />
+            <Route path="tendencias" element={<div className="route-page" key="tendencias"><Tendencias /></div>} />
+            <Route path="comparar" element={<div className="route-page" key="comparar"><Comparar /></div>} />
+            <Route path="predicciones" element={<div className="route-page" key="predicciones"><Predicciones /></div>} />
+            <Route path="datos" element={<div className="route-page" key="datos"><Datos /></div>} />
+            <Route path="*" element={<div className="route-page" key="not-found"><NotFound /></div>} />
+          </Route>
+        </Routes>
+      </Suspense>
       <Toaster position="top-right" richColors />
     </>
   );

@@ -17,6 +17,7 @@ import {
 import { CommandPalette, useCommandPalette } from "@/components/CommandPalette";
 import { TopBar } from "@/components/TopBar";
 import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
+import { preloadPage } from "@/lib/pagePreloads";
 
 type NavItem = {
   to: string;
@@ -65,7 +66,12 @@ export default function AppLayout() {
                   return (
                     <SidebarMenuItem key={item.to}>
                       <SidebarMenuButton asChild tooltip={item.label} className="nav-button">
-                        <NavLink to={item.to} end={item.to === "/"}>
+                        <NavLink
+                          to={item.to}
+                          end={item.to === "/"}
+                          onFocus={() => preloadPage(item.to)}
+                          onMouseEnter={() => preloadPage(item.to)}
+                        >
                           <Icon />
                           <span>{item.label}</span>
                         </NavLink>
@@ -92,7 +98,7 @@ export default function AppLayout() {
 
       <SidebarInset>
         <TopBar onCommandOpen={() => cmd.setOpen(true)} />
-        <div className="app-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-4 py-5 sm:px-6 lg:px-8">
+        <div className="app-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain scroll-smooth px-4 py-5 sm:px-6 lg:px-8">
           <Outlet />
         </div>
       </SidebarInset>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Line, LineChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { DataTable } from "@/components/DataTable";
 import { PageHeader } from "@/components/PageHeader";
@@ -8,17 +8,22 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { usePrecios } from "@/hooks/usePrecios";
 import { CAMPAIGN_MONTHS, campaignLabel, formatEur, formatKg } from "@/lib/format";
 import { C, CHART_PANEL_CLASS, GRID, MARGIN, XAXIS, YAXIS, GlassTooltip } from "@/lib/chartTheme";
-import { SelectFilter, campaignRows, productPriceRows, productWeightedPrice, selectOptions, summaryStats, useEnrichedPrecios } from "./pageHelpers";
+import { isCountableSaleRow, saleLineValue, weightedPrice } from "@/lib/parsers";
+import { SaleFilterPanel, campaignRows, filterSales, productPriceRows, productWeightedPrice, useEnrichedPrecios, useSaleFilterState } from "./pageHelpers";
 
 const colors = [C.primary, C.orange, C.info, C.success, C.purple];
 
 export default function Comparar() {
   const { data, isLoading } = usePrecios();
   const rows = useEnrichedPrecios(data);
-  const priceRows = useMemo(() => productPriceRows(rows), [rows]);
-  const [product, setProduct] = useState("");
-  const products = selectOptions(priceRows, (row) => row.cls.product);
-  const baseRows = useMemo(() => (product ? priceRows.filter((row) => row.cls.product === product) : priceRows), [priceRows, product]);
+  const [filters, setFilters] = useSaleFilterState();
+  const deferredFilters = useDeferredValue(filters);
+  const filteredRows = useMemo(() => filterSales(rows, deferredFilters), [rows, deferredFilters]);
+  const compareExactRows = Boolean(deferredFilters.type || deferredFilters.article || deferredFilters.confeccion || deferredFilters.subproduct);
+  const baseRows = useMemo(
+    () => (compareExactRows ? filteredRows : productPriceRows(filteredRows)),
+    [compareExactRows, filteredRows]
+  );
   const campaigns = useMemo(() => Array.from(new Set(baseRows.map((row) => row.campaign))).sort((a, b) => b - a), [baseRows]);
   const [selected, setSelected] = useState<number[]>([]);
   useEffect(() => {
@@ -26,8 +31,17 @@ export default function Comparar() {
       const valid = current.filter((campaign) => campaigns.includes(campaign));
       return valid.length >= 2 ? valid : campaigns.slice(0, Math.min(3, campaigns.length));
     });
-  }, [product, campaigns.join(",")]);
+  }, [campaigns.join(",")]);
   const active = selected;
+  const comparePrice = (targetRows: typeof baseRows) => compareExactRows ? weightedPrice(targetRows) : productWeightedPrice(targetRows);
+  const compareStats = (targetRows: typeof baseRows) => {
+    const countableRows = targetRows.filter(isCountableSaleRow);
+    return {
+      kg: countableRows.reduce((sum, row) => sum + row.kilos, 0),
+      revenue: countableRows.reduce((sum, row) => sum + saleLineValue(row), 0),
+      price: comparePrice(targetRows),
+    };
+  };
   const rowsByCampaignMonth = useMemo(() => {
     const map = new Map<string, typeof baseRows>();
     baseRows.forEach((row) => {
@@ -45,13 +59,13 @@ export default function Comparar() {
         ["label", label],
         ...active.map((campaign) => [
           campaignLabel(campaign),
-          Number(productWeightedPrice(rowsByCampaignMonth.get(`${campaign}-${month}`) ?? []).toFixed(3)),
+          Number(comparePrice(rowsByCampaignMonth.get(`${campaign}-${month}`) ?? []).toFixed(3)),
         ]),
       ]);
     }),
-    [active, rowsByCampaignMonth]
+    [active, rowsByCampaignMonth, compareExactRows]
   );
-  const tableRows = useMemo(() => active.map((campaign) => ({ campaign, ...summaryStats(campaignRows(baseRows, campaign)) })), [active, baseRows]);
+  const tableRows = useMemo(() => active.map((campaign) => ({ campaign, ...compareStats(campaignRows(baseRows, campaign)) })), [active, baseRows, compareExactRows]);
 
   if (isLoading) {
     return (
@@ -65,8 +79,8 @@ export default function Comparar() {
 
   return (
     <div className="page-shell">
-      <PageHeader title="Comparar" subtitle="Comparativa mensual del precio/kg de producto" />
-      <div className="section-toolbar"><SelectFilter label="Producto" value={product} options={products} onChange={setProduct} /></div>
+      <PageHeader title="Comparar" subtitle="Comparativa mensual con filtros de cliente, articulo y confeccion" />
+      <SaleFilterPanel rows={rows} filters={filters} onChange={setFilters} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {campaigns.slice(0, 12).map((campaign) => {
           const isActive = active.includes(campaign);
@@ -78,7 +92,7 @@ export default function Comparar() {
       </div>
       {active.length < 2 && <p className="text-sm text-muted-foreground">Selecciona al menos dos campanas para comparar.</p>}
       <Card className="glass-accented">
-        <CardHeader><CardTitle className="text-lg">Precio producto mensual comparado</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-lg">Precio mensual comparado</CardTitle></CardHeader>
         <CardContent>
           <div className={CHART_PANEL_CLASS}>
             <ResponsiveContainer width="100%" height={340}>
@@ -95,9 +109,9 @@ export default function Comparar() {
       </Card>
       <DataTable rows={tableRows} getRowKey={(row) => row.campaign} columns={[
         { key: "campaign", header: "Campana", cell: (row) => campaignLabel(row.campaign) },
-        { key: "price", header: "Precio producto", cell: (row) => `${formatEur(row.price)}/kg`, className: "text-right" },
-        { key: "kg", header: "KG producto", cell: (row) => formatKg(row.productKg), className: "text-right" },
-        { key: "revenue", header: "Facturacion producto", cell: (row) => formatEur(row.productRevenue), className: "text-right font-semibold" },
+        { key: "price", header: "Precio", cell: (row) => `${formatEur(row.price)}/kg`, className: "text-right" },
+        { key: "kg", header: "KG", cell: (row) => formatKg(row.kg), className: "text-right" },
+        { key: "revenue", header: "Facturacion", cell: (row) => formatEur(row.revenue), className: "text-right font-semibold" },
       ]} />
     </div>
   );

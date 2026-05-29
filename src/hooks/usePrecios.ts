@@ -4,7 +4,7 @@ import { MIN_CAMPAIGN_START, PRECIOS_SELECT } from "@/lib/campaigns";
 import type { PrecioRow } from "@/lib/types";
 
 const PAGE_SIZE = 1000;
-const PAGE_CONCURRENCY = 10;
+const PAGE_CONCURRENCY = 14;
 
 function normalizeRow(row: Record<string, unknown>): PrecioRow {
   return {
@@ -76,8 +76,8 @@ export function usePrecios() {
 
       return rows.map(normalizeRow);
     },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
+    staleTime: 20 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
   });
 }

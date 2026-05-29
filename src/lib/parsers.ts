@@ -259,16 +259,33 @@ export function weightedPrice(rows: PrecioRow[]): number {
   let priceCount = 0;
 
   rows.forEach((row) => {
-    if (row.price > 0) {
+    if (isCountableSaleRow(row)) {
       priceSum += row.price;
       priceCount += 1;
-    }
-    if (row.kilos > 0 && (row.base_iva > 0 || row.price > 0)) {
       kg += row.kilos;
-      value += row.base_iva > 0 ? row.base_iva : row.price * row.kilos;
+      value += saleLineValue(row);
     }
   });
 
   if (!kg) return priceCount ? priceSum / priceCount : 0;
   return value / kg;
+}
+
+export function isCountableSaleRow(row: PrecioRow): boolean {
+  const kilos = Number(row.kilos || 0);
+  const price = Number(row.price || 0);
+  const baseIva = Number(row.base_iva || 0);
+
+  if (kilos <= 0 || price <= 0) return false;
+  if (baseIva <= 0) return true;
+
+  const expectedValue = kilos * price;
+  if (expectedValue <= 0) return false;
+
+  return Math.abs(baseIva - expectedValue) / expectedValue <= 0.12;
+}
+
+export function saleLineValue(row: PrecioRow): number {
+  if (!isCountableSaleRow(row)) return 0;
+  return row.base_iva > 0 ? row.base_iva : row.price * row.kilos;
 }

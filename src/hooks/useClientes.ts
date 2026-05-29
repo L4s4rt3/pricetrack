@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { usePrecios } from "./usePrecios";
 import { useConfeccion } from "./useConfeccion";
-import { getClientName, getLineClassification, isVisibleRow } from "@/lib/parsers";
+import { getClientName, getLineClassification, isCountableSaleRow, isVisibleRow, saleLineValue } from "@/lib/parsers";
 import type { PrecioRow } from "@/lib/types";
 
 interface ClienteSummary {
@@ -57,8 +57,8 @@ export function useClientes() {
         registros: 0,
         fuente: "ventas" as const,
       };
-      existing.facturacion += d.base_iva;
-      if (getLineClassification(d).type === "Producto") existing.kg += d.kilos;
+      if (isCountableSaleRow(d)) existing.facturacion += saleLineValue(d);
+      if (getLineClassification(d).type === "Producto" && isCountableSaleRow(d)) existing.kg += d.kilos;
       existing.registros++;
       existing.ventasRegistros++;
       existing.fuente = existing.fuente === "ventas" ? "ventas" : "ambas";
