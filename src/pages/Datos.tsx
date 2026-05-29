@@ -91,7 +91,15 @@ export default function Datos() {
     toast.success("Datos eliminados");
   };
 
-  if (isLoading) return <Skeleton className="h-96 rounded-xl" />;
+  if (isLoading) {
+    return (
+      <div className="page-shell">
+        <PageHeader title="Datos" subtitle={`Preparando tabla completa desde campana ${MIN_CAMPAIGN_LABEL}`} />
+        <Skeleton className="h-28 rounded-lg" />
+        <Skeleton className="h-[380px] rounded-lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="page-shell">

@@ -6,6 +6,7 @@ import { KPICard } from "@/components/KPICard";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useClientes } from "@/hooks/useClientes";
 import { useConfeccion } from "@/hooks/useConfeccion";
 import { usePrecios } from "@/hooks/usePrecios";
@@ -16,8 +17,8 @@ import { campaignRows, summaryStats, useEnrichedPrecios } from "./pageHelpers";
 
 export default function Clientes() {
   const clientes = useClientes();
-  const { data } = usePrecios();
-  const { data: confeccion } = useConfeccion();
+  const { data, isLoading: isPreciosLoading } = usePrecios();
+  const { data: confeccion, isLoading: isConfeccionLoading } = useConfeccion();
   const salesRows = useEnrichedPrecios(data);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState("");
@@ -31,6 +32,20 @@ export default function Clientes() {
   const selectedConfeccion = (confeccion ?? []).filter((row) => (row.cliente_nombre || row.denominacion_social) === selectedName);
   const selectedCampaigns = Array.from(new Set(selectedRows.map((row) => row.campaign))).sort((a, b) => a - b);
   const selectedHistory = selectedCampaigns.map((campaign) => ({ label: campaignLabel(campaign), ...summaryStats(campaignRows(selectedRows, campaign)) }));
+
+  if (isPreciosLoading || isConfeccionLoading) {
+    return (
+      <div className="page-shell">
+        <PageHeader title="Clientes" subtitle="Preparando ranking y detalle de clientes" />
+        <div className="metric-strip">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-28 rounded-lg" />
+          ))}
+        </div>
+        <Skeleton className="h-[420px] rounded-lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="page-shell">

@@ -49,7 +49,7 @@ export function usePrecios() {
           .range(from, to);
 
         if (error) throw error;
-        return { data: (data ?? []) as Record<string, unknown>[], count: withCount ? data?.length : null };
+        return { data: (data ?? []) as unknown as Record<string, unknown>[], count: withCount ? data?.length : null };
       };
 
       const firstPage = await supabase
@@ -63,7 +63,7 @@ export function usePrecios() {
 
       if (firstPage.error) throw firstPage.error;
 
-      const rows = [...((firstPage.data ?? []) as Record<string, unknown>[])];
+      const rows = [...((firstPage.data ?? []) as unknown as Record<string, unknown>[])];
       const total = firstPage.count ?? rows.length;
       const offsets = [];
       for (let from = PAGE_SIZE; from < total; from += PAGE_SIZE) offsets.push(from);

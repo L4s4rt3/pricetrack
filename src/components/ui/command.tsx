@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Command as CommandPrimitive } from "cmdk";
 import { Search } from "lucide-react";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 const Command = React.forwardRef<
@@ -24,7 +24,9 @@ interface CommandDialogProps {
 
 const CommandDialog = ({ children, ...props }: CommandDialogProps) => (
   <Dialog {...props}>
-    <DialogContent className="glass-card overflow-hidden border-[var(--glass-border-accent)] p-0 shadow-[var(--glass-shadow-lg)]">
+    <DialogContent className="glass-card overflow-hidden border-[hsl(var(--glass-border-accent))] p-0 shadow-[var(--glass-shadow-lg)]">
+      <DialogTitle className="sr-only">Paleta de comandos</DialogTitle>
+      <DialogDescription className="sr-only">Busca una pagina o accion de PriceTrack.</DialogDescription>
       <Command className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-group]]:px-2 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
         {children}
       </Command>
@@ -36,7 +38,7 @@ const CommandInput = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Input>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
 >(({ className, ...props }, ref) => (
-  <div className="flex items-center border-b border-[var(--glass-border)] bg-[var(--glass-bg-strong)] px-3" cmdk-input-wrapper="">
+  <div className="flex items-center border-b border-[hsl(var(--glass-border))] bg-[hsl(var(--glass-bg-strong))] px-3" cmdk-input-wrapper="">
     <Search className="mr-2 h-4 w-4 shrink-0 opacity-50" />
     <CommandPrimitive.Input
       ref={ref}

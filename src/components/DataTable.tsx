@@ -18,7 +18,7 @@ interface DataTableProps<T> {
 
 export function DataTable<T>({ rows, columns, empty = "Sin datos", className, getRowKey }: DataTableProps<T>) {
   return (
-    <div className={cn("data-table-shell overflow-hidden rounded-lg border border-[var(--glass-border)] bg-[var(--glass-bg)]", className)}>
+    <div className={cn("data-table-shell overflow-hidden rounded-lg border border-[hsl(var(--glass-border))] bg-[hsl(var(--glass-bg))]", className)}>
       <div className="table-scroll overflow-x-auto">
         <table className="w-full min-w-[760px] table-fixed text-left text-sm">
           <thead className="table-head text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -30,7 +30,7 @@ export function DataTable<T>({ rows, columns, empty = "Sin datos", className, ge
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-[var(--glass-border)]">
+          <tbody className="divide-y divide-[hsl(var(--glass-border))]">
             {rows.length === 0 ? (
               <tr>
                 <td className="px-4 py-10 text-center text-muted-foreground" colSpan={columns.length}>

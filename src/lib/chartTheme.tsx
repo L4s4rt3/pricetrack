@@ -1,23 +1,23 @@
 export const C = {
-  primary: "#01696f",
-  primaryLight: "#0c4e54",
-  success: "#437a22",
-  warning: "#d19900",
-  destructive: "#a12c7b",
-  info: "#006494",
-  muted: "#b0afa9",
-  gold: "#d19900",
-  orange: "#da7101",
-  purple: "#8b5cf6",
+  primary: "#c47a20",
+  primaryLight: "#a06818",
+  success: "#5a8a4e",
+  warning: "#c47a20",
+  destructive: "#c44030",
+  info: "#5a7a8a",
+  muted: "#9a8a7a",
+  gold: "#b08030",
+  orange: "#c47a20",
+  purple: "#8a6a7a",
 };
 
 export const CHART_COLORS = {
-  exportacion: "#10b981",
-  mercado: "#3b82f6",
-  noExportacion: "#f97316",
-  noComercial: "#f59e0b",
-  mujeres: "#8b5cf6",
-  otro: "#94a3b8",
+  exportacion: "#c47a20",
+  mercado: "#5a7a8a",
+  noExportacion: "#c45a3a",
+  noComercial: "#a08030",
+  mujeres: "#8a6a7a",
+  otro: "#7a7a7a",
 };
 
 export function barFill(color: string, opacity: number): string {
@@ -60,11 +60,11 @@ export const PIE_STYLE = {
   paddingAngle: 2,
 };
 
-export const CHART_CURSOR = { fill: "var(--glass-bg-strong)", stroke: "var(--glass-border-accent)" };
-export const CHART_LINE_CURSOR = { stroke: "var(--glass-border-accent)", strokeDasharray: "3 3" };
+export const CHART_CURSOR = { fill: "hsl(var(--glass-bg-strong))", stroke: "hsl(var(--glass-border-accent))" };
+export const CHART_LINE_CURSOR = { stroke: "hsl(var(--glass-border-accent))", strokeDasharray: "3 3" };
 
 export function activeDotStyle(color: string) {
-  return { r: 5, fill: color, stroke: "var(--glass-bg-strong)", strokeWidth: 2 };
+  return { r: 5, fill: color, stroke: "hsl(var(--glass-bg-strong))", strokeWidth: 2 };
 }
 
 export const CHART_PANEL_CLASS = "chart-panel";
@@ -80,7 +80,7 @@ export function GlassTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border border-[var(--glass-border-accent)] bg-[var(--glass-bg-strong)] px-3 py-2 text-xs shadow-[var(--glass-shadow-lg)] backdrop-blur-2xl">
+    <div className="rounded-xl border border-[hsl(var(--glass-border-accent))] bg-[hsl(var(--glass-bg-solid))] px-3.5 py-2.5 text-xs shadow-[var(--glass-shadow-lg)] backdrop-blur-xl">
       <p className="mb-1 font-medium text-foreground">{label}</p>
       {payload.map((item, index) => (
         <div key={index} className="flex items-center gap-2">

@@ -3,6 +3,7 @@ import { RotateCcw, Search } from "lucide-react";
 import { FilterField, FilterPanel } from "@/components/FilterPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { campaignLabel, formatEur, formatKg, formatNum, MONTHS } from "@/lib/format";
 import {
   getCampaignStart,
@@ -219,14 +220,19 @@ export function SelectFilter({
 }) {
   return (
     <FilterField label={label}>
-      <select className="filter-select h-10 w-full rounded-md px-3 text-sm outline-none" value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Todos</option>
-        {options.map((option) => (
-          <option key={option} value={option}>
-            {format(option)}
-          </option>
-        ))}
-      </select>
+      <Select value={value || "__all__"} onValueChange={(v) => onChange(v === "__all__" ? "" : v)}>
+        <SelectTrigger className="h-10">
+          <SelectValue placeholder="Todos" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__all__">Todos</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option} value={option}>
+              {format(option)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </FilterField>
   );
 }
@@ -314,13 +320,18 @@ export function PaginationControls({
         Pagina {page} de {pageCount} · {formatNum(total)} registros
       </span>
       <div className="flex items-center gap-2">
-        <select className="filter-select h-9 rounded-md px-2 text-sm outline-none" value={pageSize} onChange={(event) => onPageSize(Number(event.target.value))}>
-          {[50, 100, 200].map((size) => (
-            <option key={size} value={size}>
-              {size}
-            </option>
-          ))}
-        </select>
+        <Select value={String(pageSize)} onValueChange={(v) => onPageSize(Number(v))}>
+          <SelectTrigger className="h-9 w-auto min-w-[70px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[50, 100, 200].map((size) => (
+              <SelectItem key={size} value={String(size)}>
+                {size}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>
           Anterior
         </Button>

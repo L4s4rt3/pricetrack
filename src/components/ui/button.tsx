@@ -8,11 +8,11 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "border border-primary/25 bg-primary/88 text-primary-foreground shadow-[0_10px_24px_hsl(var(--primary)/0.18),inset_0_1px_0_hsl(0_0%_100%/0.20)] hover:border-primary/45 hover:bg-primary/82",
-        destructive: "border border-destructive/25 bg-destructive/88 text-destructive-foreground shadow-[var(--glass-shadow)] hover:bg-destructive/80",
-        outline: "border border-[var(--glass-border)] bg-[var(--glass-bg)] text-foreground shadow-[var(--glass-shadow)] hover:border-[var(--glass-border-accent)] hover:bg-[var(--glass-bg-strong)]",
-        secondary: "border border-[var(--glass-border)] bg-[var(--glass-bg-strong)] text-secondary-foreground shadow-[var(--glass-shadow)] hover:border-[var(--glass-border-accent)] hover:bg-[var(--glass-bg-solid)]",
-        ghost: "border border-transparent bg-transparent hover:border-[var(--glass-border-accent)] hover:bg-[var(--glass-bg)] hover:text-primary hover:shadow-[var(--glass-shadow)]",
+        default: "border border-primary/25 bg-primary/[0.88] text-primary-foreground shadow-[0_10px_24px_hsl(var(--primary)/0.18),inset_0_1px_0_hsl(0_0%_100%/0.20)] hover:border-primary/[0.45] hover:bg-primary/[0.82]",
+        destructive: "border border-destructive/25 bg-destructive/[0.88] text-destructive-foreground shadow-[var(--glass-shadow)] hover:bg-destructive/80",
+        outline: "border border-[hsl(var(--glass-border))] bg-[hsl(var(--glass-bg))] text-foreground shadow-[var(--glass-shadow)] hover:border-[hsl(var(--glass-border-accent))] hover:bg-[hsl(var(--glass-bg-strong))]",
+        secondary: "border border-[hsl(var(--glass-border))] bg-[hsl(var(--glass-bg-strong))] text-secondary-foreground shadow-[var(--glass-shadow)] hover:border-[hsl(var(--glass-border-accent))] hover:bg-[hsl(var(--glass-bg-solid))]",
+        ghost: "border border-transparent bg-transparent hover:border-[hsl(var(--glass-border-accent))] hover:bg-[hsl(var(--glass-bg))] hover:text-primary hover:shadow-[var(--glass-shadow)]",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

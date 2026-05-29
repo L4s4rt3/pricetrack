@@ -106,7 +106,7 @@ const Sidebar = React.forwardRef<
       data-state={open ? "expanded" : "collapsed"}
       data-collapsible={open ? "" : collapsible}
       className={cn(
-        "group peer hidden h-screen shrink-0 overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[12px_0_30px_hsl(150_18%_14%/0.08)] transition-[width] duration-150 md:flex md:flex-col",
+        "group peer hidden h-screen shrink-0 overflow-hidden border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-[12px_0_30px_hsl(222_30%_12%/0.08)] transition-[width] duration-150 md:flex md:flex-col",
         open ? "w-[var(--sidebar-width)]" : "w-[var(--sidebar-width-icon)]",
         className
       )}

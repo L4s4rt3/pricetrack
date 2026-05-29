@@ -5,6 +5,7 @@ import { DataTable } from "@/components/DataTable";
 import { KPICard } from "@/components/KPICard";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { usePrecios } from "@/hooks/usePrecios";
 import { formatEur } from "@/lib/format";
 import { C, CHART_PANEL_CLASS, GRID, MARGIN, XAXIS, YAXIS, GlassTooltip, barFill } from "@/lib/chartTheme";
@@ -12,18 +13,27 @@ import { predictPrices } from "@/lib/predictions";
 import { SelectFilter, productPriceRows, productWeightedPrice, selectOptions, useEnrichedPrecios } from "./pageHelpers";
 
 export default function Predicciones() {
-  const { data } = usePrecios();
+  const { data, isLoading } = usePrecios();
   const rows = useEnrichedPrecios(data);
   const priceRows = useMemo(() => productPriceRows(rows), [rows]);
   const [product, setProduct] = useState("Naranja");
   const products = selectOptions(priceRows, (row) => row.cls.product);
-  const baseRows = product ? priceRows.filter((row) => row.cls.product === product) : priceRows;
+  const baseRows = useMemo(() => (product ? priceRows.filter((row) => row.cls.product === product) : priceRows), [priceRows, product]);
   const monthlyHistory = useMemo(() => {
-    const keys = Array.from(new Set(baseRows.map((row) => `${row.year}-${row.month}`))).sort();
-    return keys.map((key) => {
-      const [year, month] = key.split("-").map(Number);
-      return { year, month, price: productWeightedPrice(baseRows.filter((row) => row.year === year && row.month === month)) };
-    }).filter((item) => item.month && item.price > 0);
+    const byMonth = new Map<string, typeof baseRows>();
+    baseRows.forEach((row) => {
+      const key = `${row.year}-${row.month}`;
+      const bucket = byMonth.get(key);
+      if (bucket) bucket.push(row);
+      else byMonth.set(key, [row]);
+    });
+    return Array.from(byMonth.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, rowsForMonth]) => {
+        const [year, month] = key.split("-").map(Number);
+        return { year, month, price: productWeightedPrice(rowsForMonth) };
+      })
+      .filter((item) => item.month && item.price > 0);
   }, [baseRows]);
   const prediction = predictPrices(monthlyHistory, 12);
   const chartData = prediction.predMonths.map((label, index) => ({
@@ -34,6 +44,16 @@ export default function Predicciones() {
   }));
   const next = prediction.predicted[0] ?? 0;
   const confidence = prediction.predicted.length ? Math.max(35, Math.min(92, 88 - Math.abs(prediction.trend) * 20)) : 0;
+
+  if (isLoading) {
+    return (
+      <div className="page-shell">
+        <PageHeader title="Predicciones" subtitle="Preparando histórico para la proyección estadística" />
+        <Skeleton className="h-24 rounded-lg" />
+        <Skeleton className="h-[420px] rounded-lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="page-shell">

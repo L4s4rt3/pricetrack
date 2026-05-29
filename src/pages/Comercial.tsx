@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useConfeccion } from "@/hooks/useConfeccion";
 import { usePrecios } from "@/hooks/usePrecios";
 import { formatEur, formatKg, formatNum } from "@/lib/format";
@@ -19,8 +20,8 @@ const quickAccess = [
 ];
 
 export default function Comercial() {
-  const { data: precios } = usePrecios();
-  const { data: confeccion } = useConfeccion();
+  const { data: precios, isLoading: isPreciosLoading } = usePrecios();
+  const { data: confeccion, isLoading: isConfeccionLoading } = useConfeccion();
   const rows = useEnrichedPrecios(precios);
   const stats = summaryStats(rows);
   const [search, setSearch] = useState("");
@@ -47,6 +48,20 @@ export default function Comercial() {
       .slice(0, 24);
   }, [confeccion, search]);
   const traceKg = (confeccion ?? []).reduce((sum, row) => sum + row.kg_netos, 0);
+
+  if (isPreciosLoading || isConfeccionLoading) {
+    return (
+      <div className="page-shell">
+        <PageHeader title="Comercial" subtitle="Preparando ventas, productos, clientes y trazabilidad" />
+        <div className="metric-strip">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-28 rounded-lg" />
+          ))}
+        </div>
+        <Skeleton className="h-[420px] rounded-lg" />
+      </div>
+    );
+  }
 
   return (
     <div className="page-shell">

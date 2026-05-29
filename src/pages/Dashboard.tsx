@@ -5,6 +5,7 @@ import { DollarSign, Package, TrendingUp, Users } from "lucide-react";
 import { KPICard } from "@/components/KPICard";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePrecios } from "@/hooks/usePrecios";
 import { campaignLabel, CAMPAIGN_MONTHS, formatEur, formatKg, formatNum } from "@/lib/format";
@@ -66,9 +67,14 @@ export default function Dashboard() {
       <SaleFilterPanel rows={rows} filters={filters} onChange={setFilters} compact />
       <div className="section-toolbar">
         <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Campana activa</label>
-        <select className="filter-select h-10 rounded-md px-3 text-sm outline-none" value={selectedCampaign || currentCampaign} onChange={(event) => setSelectedCampaign(event.target.value)}>
-          {campaigns.map((campaign) => <option key={campaign} value={campaign}>{campaignLabel(campaign)}</option>)}
-        </select>
+        <Select value={String(selectedCampaign || currentCampaign)} onValueChange={setSelectedCampaign}>
+          <SelectTrigger className="h-10 w-auto min-w-[160px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {campaigns.map((campaign) => <SelectItem key={campaign} value={String(campaign)}>{campaignLabel(campaign)}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
       <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
         <ChartCard title="Evolucion precio/kg producto">
