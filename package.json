@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test:navigation": "node --test scripts/navigation.test.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },
