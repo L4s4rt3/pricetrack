@@ -1,5 +1,19 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { BarChart3, Citrus, Database, LayoutDashboard, ShoppingBag, Truck } from "lucide-react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import {
+  BarChart3,
+  ChevronDown,
+  Citrus,
+  Database,
+  FileText,
+  GitCompareArrows,
+  LayoutDashboard,
+  LineChart,
+  Package,
+  ShoppingBag,
+  TrendingUp,
+  Truck,
+  Users,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -8,33 +22,70 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
+  SidebarMenuAction,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarProvider,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { CommandPalette, useCommandPalette } from "@/components/CommandPalette";
 import { TopBar } from "@/components/TopBar";
 import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
+import {
+  isNavigationRouteActive,
+  navigationSections,
+  type NavigationIconId,
+  type NavigationItem,
+} from "@/lib/navigation";
 import { preloadPage } from "@/lib/pagePreloads";
 
-type NavItem = {
-  to: string;
-  label: string;
-  icon: typeof LayoutDashboard;
+const navigationIcons: Record<NavigationIconId, typeof LayoutDashboard> = {
+  dashboard: LayoutDashboard,
+  commercial: ShoppingBag,
+  logistics: Truck,
+  analytics: BarChart3,
+  data: Database,
+  sales: FileText,
+  products: Package,
+  clients: Users,
+  trends: TrendingUp,
+  compare: GitCompareArrows,
+  predictions: LineChart,
 };
 
-const navItems: NavItem[] = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/comercial", label: "Comercial", icon: ShoppingBag },
-  { to: "/logistica", label: "Logistica", icon: Truck },
-  { to: "/analisis", label: "Analisis", icon: BarChart3 },
-  { to: "/datos", label: "Datos", icon: Database },
-];
+function isSectionActive(pathname: string, item: NavigationItem) {
+  return (
+    isNavigationRouteActive(pathname, item.to) ||
+    item.children?.some((child) => isNavigationRouteActive(pathname, child.to)) ||
+    false
+  );
+}
 
 export default function AppLayout() {
   const cmd = useCommandPalette();
+  const location = useLocation();
+
+  const renderNavLink = (item: NavigationItem, className = "nav-button") => {
+    const Icon = navigationIcons[item.icon];
+
+    return (
+      <NavLink
+        to={item.to}
+        end={item.to === "/"}
+        onFocus={() => preloadPage(item.to)}
+        onMouseEnter={() => preloadPage(item.to)}
+        className={className}
+      >
+        <Icon />
+        <span>{item.label}</span>
+      </NavLink>
+    );
+  };
 
   return (
     <SidebarProvider className="app-frame">
@@ -61,20 +112,44 @@ export default function AppLayout() {
           <SidebarGroup className="nav-section">
             <SidebarGroupLabel>Areas</SidebarGroupLabel>
               <SidebarMenu>
-                {navItems.map((item) => {
-                  const Icon = item.icon;
+                {navigationSections.map((item) => {
+                  const sectionActive = isSectionActive(location.pathname, item);
+
+                  if (item.children?.length) {
+                    return (
+                      <Collapsible key={`${item.to}-${sectionActive ? "active" : "idle"}`} asChild defaultOpen={sectionActive} className="group/collapsible">
+                        <SidebarMenuItem>
+                          <SidebarMenuButton asChild tooltip={item.label} className="nav-button" isActive={sectionActive}>
+                            {renderNavLink(item)}
+                          </SidebarMenuButton>
+                          <CollapsibleTrigger asChild>
+                            <SidebarMenuAction
+                              aria-label={`Alternar ${item.label}`}
+                              className="nav-collapse-trigger group-data-[state=collapsed]/sidebar-wrapper:hidden"
+                            >
+                              <ChevronDown className="transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                            </SidebarMenuAction>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <SidebarMenuSub className="nav-sub-list">
+                              {item.children.map((child) => (
+                                <SidebarMenuSubItem key={child.to}>
+                                  <SidebarMenuSubButton asChild isActive={isNavigationRouteActive(location.pathname, child.to)} className="nav-sub-button">
+                                    {renderNavLink(child, "nav-sub-link")}
+                                  </SidebarMenuSubButton>
+                                </SidebarMenuSubItem>
+                              ))}
+                            </SidebarMenuSub>
+                          </CollapsibleContent>
+                        </SidebarMenuItem>
+                      </Collapsible>
+                    );
+                  }
+
                   return (
                     <SidebarMenuItem key={item.to}>
-                      <SidebarMenuButton asChild tooltip={item.label} className="nav-button">
-                        <NavLink
-                          to={item.to}
-                          end={item.to === "/"}
-                          onFocus={() => preloadPage(item.to)}
-                          onMouseEnter={() => preloadPage(item.to)}
-                        >
-                          <Icon />
-                          <span>{item.label}</span>
-                        </NavLink>
+                      <SidebarMenuButton asChild tooltip={item.label} className="nav-button" isActive={sectionActive}>
+                        {renderNavLink(item)}
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   );
