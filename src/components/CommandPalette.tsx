@@ -1,21 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { BarChart3, Database, FileText, GitCompareArrows, LayoutDashboard, LineChart, Package, ShoppingBag, TrendingUp, Truck, Users } from "lucide-react";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { flattenNavigationItems, navigationSections } from "@/lib/navigation";
+import { navigationIcons } from "@/lib/navigationIcons";
 
-const pages = [
-  { label: "Dashboard", path: "/", icon: LayoutDashboard },
-  { label: "Comercial", path: "/comercial", icon: ShoppingBag },
-  { label: "Logistica", path: "/logistica", icon: Truck },
-  { label: "Analisis", path: "/analisis", icon: BarChart3 },
-  { label: "Ventas", path: "/ventas", icon: FileText },
-  { label: "Productos", path: "/productos", icon: Package },
-  { label: "Clientes", path: "/clientes", icon: Users },
-  { label: "Tendencias", path: "/tendencias", icon: TrendingUp },
-  { label: "Comparar", path: "/comparar", icon: GitCompareArrows },
-  { label: "Predicciones", path: "/predicciones", icon: LineChart },
-  { label: "Datos", path: "/datos", icon: Database },
-];
+const pages = flattenNavigationItems(navigationSections);
 
 export function useCommandPalette() {
   const [open, setOpen] = useState(false);
@@ -44,13 +33,13 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         <CommandEmpty>No se encontraron resultados.</CommandEmpty>
         <CommandGroup heading="Navegacion">
           {pages.map((page) => {
-            const Icon = page.icon;
+            const Icon = navigationIcons[page.icon];
             return (
               <CommandItem
-                key={`${page.label}-${page.path}`}
+                key={`${page.label}-${page.to}`}
                 value={page.label}
                 onSelect={() => {
-                  navigate(page.path);
+                  navigate(page.to);
                   onOpenChange(false);
                 }}
               >

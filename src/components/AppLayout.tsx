@@ -1,18 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
-  BarChart3,
   ChevronDown,
   Citrus,
-  Database,
-  FileText,
-  GitCompareArrows,
-  LayoutDashboard,
-  LineChart,
-  Package,
-  ShoppingBag,
-  TrendingUp,
-  Truck,
-  Users,
 } from "lucide-react";
 import {
   Sidebar,
@@ -36,27 +25,9 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { CommandPalette, useCommandPalette } from "@/components/CommandPalette";
 import { TopBar } from "@/components/TopBar";
 import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
-import {
-  isNavigationRouteActive,
-  navigationSections,
-  type NavigationIconId,
-  type NavigationItem,
-} from "@/lib/navigation";
+import { isNavigationRouteActive, navigationSections, type NavigationItem } from "@/lib/navigation";
+import { navigationIcons } from "@/lib/navigationIcons";
 import { preloadPage } from "@/lib/pagePreloads";
-
-const navigationIcons: Record<NavigationIconId, typeof LayoutDashboard> = {
-  dashboard: LayoutDashboard,
-  commercial: ShoppingBag,
-  logistics: Truck,
-  analytics: BarChart3,
-  data: Database,
-  sales: FileText,
-  products: Package,
-  clients: Users,
-  trends: TrendingUp,
-  compare: GitCompareArrows,
-  predictions: LineChart,
-};
 
 function isSectionActive(pathname: string, item: NavigationItem) {
   return (
