@@ -11,9 +11,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePrecios } from "@/hooks/usePrecios";
+import { preciosQueryKey } from "@/hooks/usePrecios";
 import { supabase } from "@/integrations/supabase/client";
 import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
 import { campaignLabel, formatEur, formatKg, formatNum, MONTHS } from "@/lib/format";
+import { removePersistentQuery } from "@/lib/persistentQueryCache";
 import { SaleFilterPanel, filterSales, summaryStats, useEnrichedPrecios, usePagination, useSaleFilterState, PaginationControls } from "./pageHelpers";
 
 export default function Datos() {
@@ -71,6 +73,7 @@ export default function Datos() {
       if (!records.length) throw new Error("CSV sin filas validas");
       const { error } = await supabase.from("precios").insert(records);
       if (error) throw error;
+      await removePersistentQuery(preciosQueryKey);
       await queryClient.invalidateQueries({ queryKey: ["precios"] });
       toast.success(`${records.length} filas importadas`);
       setImportOpen(false);
@@ -87,6 +90,7 @@ export default function Datos() {
       toast.error("No se pudieron eliminar los datos");
       return;
     }
+    await removePersistentQuery(preciosQueryKey);
     await queryClient.invalidateQueries({ queryKey: ["precios"] });
     toast.success("Datos eliminados");
   };

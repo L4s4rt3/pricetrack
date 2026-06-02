@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { CONFECCION_SELECT, MIN_CONFECCION_DATE } from "@/lib/campaigns";
+import { LONG_LIVED_QUERY_OPTIONS, readPersistentQuery, writePersistentQuery } from "@/lib/persistentQueryCache";
 import type { ConfeccionRow } from "@/lib/types";
 
 const PAGE_SIZE = 1000;
 const PAGE_CONCURRENCY = 12;
+export const confeccionQueryKey = ["confeccion", MIN_CONFECCION_DATE] as const;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function normalizeRow(row: Record<string, any>): ConfeccionRow {
@@ -39,49 +41,54 @@ function normalizeRow(row: Record<string, any>): ConfeccionRow {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+export async function fetchConfeccion() {
+  const cached = await readPersistentQuery<ConfeccionRow[]>(confeccionQueryKey);
+  if (cached) return cached.data;
+
+  const firstPage = await supabase
+    .from("ventas_confeccion_detalle")
+    .select(CONFECCION_SELECT, { count: "exact" })
+    .gte("fecha_confeccion", MIN_CONFECCION_DATE)
+    .order("fecha_confeccion", { ascending: false })
+    .order("id", { ascending: false })
+    .range(0, PAGE_SIZE - 1);
+
+  if (firstPage.error) throw firstPage.error;
+
+  const rows: Record<string, any>[] = [...(firstPage.data ?? [])];
+  const total = firstPage.count ?? rows.length;
+  const offsets = [];
+  for (let from = PAGE_SIZE; from < total; from += PAGE_SIZE) offsets.push(from);
+
+  const fetchPage = async (from: number) => {
+    const to = from + PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from("ventas_confeccion_detalle")
+      .select(CONFECCION_SELECT)
+      .gte("fecha_confeccion", MIN_CONFECCION_DATE)
+      .order("fecha_confeccion", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    return (data ?? []) as Record<string, any>[];
+  };
+
+  for (let index = 0; index < offsets.length; index += PAGE_CONCURRENCY) {
+    const batch = offsets.slice(index, index + PAGE_CONCURRENCY);
+    const pages = await Promise.all(batch.map(fetchPage));
+    pages.forEach((page) => rows.push(...page));
+  }
+
+  const normalized = rows.map(normalizeRow);
+  void writePersistentQuery(confeccionQueryKey, normalized);
+  return normalized;
+}
+
 export function useConfeccion() {
   return useQuery({
-    queryKey: ["confeccion", MIN_CONFECCION_DATE],
-    queryFn: async () => {
-      const firstPage = await supabase
-        .from("ventas_confeccion_detalle")
-        .select(CONFECCION_SELECT, { count: "exact" })
-        .gte("fecha_confeccion", MIN_CONFECCION_DATE)
-        .order("fecha_confeccion", { ascending: false })
-        .order("id", { ascending: false })
-        .range(0, PAGE_SIZE - 1);
-
-      if (firstPage.error) throw firstPage.error;
-
-      const rows: Record<string, any>[] = [...(firstPage.data ?? [])];
-      const total = firstPage.count ?? rows.length;
-      const offsets = [];
-      for (let from = PAGE_SIZE; from < total; from += PAGE_SIZE) offsets.push(from);
-
-      const fetchPage = async (from: number) => {
-        const to = from + PAGE_SIZE - 1;
-        const { data, error } = await supabase
-          .from("ventas_confeccion_detalle")
-          .select(CONFECCION_SELECT)
-          .gte("fecha_confeccion", MIN_CONFECCION_DATE)
-          .order("fecha_confeccion", { ascending: false })
-          .order("id", { ascending: false })
-          .range(from, to);
-
-        if (error) throw error;
-        return (data ?? []) as Record<string, any>[];
-      };
-
-      for (let index = 0; index < offsets.length; index += PAGE_CONCURRENCY) {
-        const batch = offsets.slice(index, index + PAGE_CONCURRENCY);
-        const pages = await Promise.all(batch.map(fetchPage));
-        pages.forEach((page) => rows.push(...page));
-      }
-
-      return rows.map(normalizeRow);
-    },
-    staleTime: 20 * 60 * 1000,
-    gcTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
+    queryKey: confeccionQueryKey,
+    queryFn: fetchConfeccion,
+    ...LONG_LIVED_QUERY_OPTIONS,
   });
 }

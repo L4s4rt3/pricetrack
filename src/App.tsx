@@ -1,9 +1,13 @@
 import { Suspense, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import { Toaster } from "@/components/ui/sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-import { pageLoaders, pagePreloaders } from "@/lib/pagePreloads";
+import { confeccionQueryKey, fetchConfeccion } from "@/hooks/useConfeccion";
+import { fetchPrecios, preciosQueryKey } from "@/hooks/usePrecios";
+import { LONG_LIVED_QUERY_OPTIONS } from "@/lib/persistentQueryCache";
+import { criticalPagePreloaders, pageLoaders } from "@/lib/pagePreloads";
 import { lazyWithPreload, scheduleRoutePreload } from "@/lib/routePreload";
 
 const Dashboard = lazyWithPreload(pageLoaders["/"]);
@@ -21,24 +25,53 @@ const NotFound = lazyWithPreload(pageLoaders["*"]);
 
 function PageLoader() {
   return (
-    <div className="page-shell">
-      <Skeleton className="h-24 rounded-xl" />
+    <div className="page-shell route-skeleton">
+      <Skeleton className="h-[104px] rounded-xl" />
       <div className="metric-strip">
         {Array.from({ length: 4 }).map((_, index) => (
           <Skeleton key={index} className="h-28 rounded-xl" />
         ))}
       </div>
-      <Skeleton className="h-80 rounded-xl" />
+      <Skeleton className="h-24 rounded-xl" />
+      <div className="grid gap-4 lg:grid-cols-[1.35fr_0.9fr]">
+        <Skeleton className="h-[360px] rounded-xl" />
+        <Skeleton className="h-[360px] rounded-xl" />
+      </div>
     </div>
   );
 }
 
 export default function App() {
   const location = useLocation();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
-    scheduleRoutePreload(pagePreloaders);
+    scheduleRoutePreload(criticalPagePreloaders);
   }, []);
+
+  useEffect(() => {
+    const preloadData = () => {
+      void queryClient.prefetchQuery({
+        queryKey: preciosQueryKey,
+        queryFn: fetchPrecios,
+        ...LONG_LIVED_QUERY_OPTIONS,
+      });
+      void queryClient.prefetchQuery({
+        queryKey: confeccionQueryKey,
+        queryFn: fetchConfeccion,
+        ...LONG_LIVED_QUERY_OPTIONS,
+      });
+    };
+
+    const idleCallback = globalThis.requestIdleCallback;
+    if (idleCallback) {
+      const id = idleCallback(preloadData, { timeout: 3500 });
+      return () => globalThis.cancelIdleCallback?.(id);
+    }
+
+    const id = globalThis.setTimeout(preloadData, 1200);
+    return () => globalThis.clearTimeout(id);
+  }, [queryClient]);
 
   return (
     <>

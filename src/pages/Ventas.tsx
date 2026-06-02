@@ -8,9 +8,11 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePrecios } from "@/hooks/usePrecios";
+import { preciosQueryKey } from "@/hooks/usePrecios";
 import { supabase } from "@/integrations/supabase/client";
 import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
 import { campaignLabel, formatEur, formatKg, formatNum, MONTHS } from "@/lib/format";
+import { removePersistentQuery } from "@/lib/persistentQueryCache";
 import { SaleFilterPanel, filterSales, summaryStats, useEnrichedPrecios, usePagination, useSaleFilterState, PaginationControls } from "./pageHelpers";
 
 export default function Ventas() {
@@ -29,6 +31,7 @@ export default function Ventas() {
       toast.error("No se pudo eliminar la linea");
       return;
     }
+    await removePersistentQuery(preciosQueryKey);
     await queryClient.invalidateQueries({ queryKey: ["precios"] });
     toast.success("Linea eliminada");
   };

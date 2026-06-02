@@ -6,3 +6,4 @@ dist/
 ventas
 ventas.csv
 .vercel
+generated/

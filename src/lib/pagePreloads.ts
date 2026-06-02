@@ -15,6 +15,11 @@ const pageImports = {
 
 export const pageLoaders = pageImports;
 export const pagePreloaders = Object.values(pageImports);
+export const criticalPagePreloaders = [
+  pageImports["/comercial"],
+  pageImports["/analisis"],
+  pageImports["/datos"],
+];
 
 export function preloadPage(pathname: string) {
   const cleanPath = pathname === "/" ? "/" : `/${pathname.split("/").filter(Boolean)[0] ?? ""}`;

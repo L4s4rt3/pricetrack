@@ -1,10 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { MIN_CAMPAIGN_START, PRECIOS_SELECT } from "@/lib/campaigns";
+import { LONG_LIVED_QUERY_OPTIONS, readPersistentQuery, writePersistentQuery } from "@/lib/persistentQueryCache";
 import type { PrecioRow } from "@/lib/types";
 
 const PAGE_SIZE = 1000;
 const PAGE_CONCURRENCY = 14;
+export const preciosQueryKey = ["precios", MIN_CAMPAIGN_START] as const;
 
 function normalizeRow(row: Record<string, unknown>): PrecioRow {
   return {
@@ -33,51 +35,56 @@ function normalizeRow(row: Record<string, unknown>): PrecioRow {
   };
 }
 
+export async function fetchPrecios() {
+  const cached = await readPersistentQuery<PrecioRow[]>(preciosQueryKey);
+  if (cached) return cached.data;
+
+  const fetchPage = async (from: number) => {
+    const to = from + PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from("precios")
+      .select(PRECIOS_SELECT)
+      .gte("ano", MIN_CAMPAIGN_START)
+      .order("ano", { ascending: false })
+      .order("mes", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, to);
+
+    if (error) throw error;
+    return (data ?? []) as unknown as Record<string, unknown>[];
+  };
+
+  const firstPage = await supabase
+    .from("precios")
+    .select(PRECIOS_SELECT, { count: "exact" })
+    .gte("ano", MIN_CAMPAIGN_START)
+    .order("ano", { ascending: false })
+    .order("mes", { ascending: false })
+    .order("id", { ascending: false })
+    .range(0, PAGE_SIZE - 1);
+
+  if (firstPage.error) throw firstPage.error;
+
+  const rows = [...((firstPage.data ?? []) as unknown as Record<string, unknown>[])];
+  const total = firstPage.count ?? rows.length;
+  const offsets = [];
+  for (let from = PAGE_SIZE; from < total; from += PAGE_SIZE) offsets.push(from);
+
+  for (let index = 0; index < offsets.length; index += PAGE_CONCURRENCY) {
+    const batch = offsets.slice(index, index + PAGE_CONCURRENCY);
+    const pages = await Promise.all(batch.map(fetchPage));
+    pages.forEach((page) => rows.push(...page));
+  }
+
+  const normalized = rows.map(normalizeRow);
+  void writePersistentQuery(preciosQueryKey, normalized);
+  return normalized;
+}
+
 export function usePrecios() {
   return useQuery({
-    queryKey: ["precios", MIN_CAMPAIGN_START],
-    queryFn: async () => {
-      const fetchPage = async (from: number, withCount = false) => {
-        const to = from + PAGE_SIZE - 1;
-        const { data, error } = await supabase
-          .from("precios")
-          .select(PRECIOS_SELECT, withCount ? { count: "exact" } : undefined)
-          .gte("ano", MIN_CAMPAIGN_START)
-          .order("ano", { ascending: false })
-          .order("mes", { ascending: false })
-          .order("id", { ascending: false })
-          .range(from, to);
-
-        if (error) throw error;
-        return { data: (data ?? []) as unknown as Record<string, unknown>[], count: withCount ? data?.length : null };
-      };
-
-      const firstPage = await supabase
-        .from("precios")
-        .select(PRECIOS_SELECT, { count: "exact" })
-        .gte("ano", MIN_CAMPAIGN_START)
-        .order("ano", { ascending: false })
-        .order("mes", { ascending: false })
-        .order("id", { ascending: false })
-        .range(0, PAGE_SIZE - 1);
-
-      if (firstPage.error) throw firstPage.error;
-
-      const rows = [...((firstPage.data ?? []) as unknown as Record<string, unknown>[])];
-      const total = firstPage.count ?? rows.length;
-      const offsets = [];
-      for (let from = PAGE_SIZE; from < total; from += PAGE_SIZE) offsets.push(from);
-
-      for (let index = 0; index < offsets.length; index += PAGE_CONCURRENCY) {
-        const batch = offsets.slice(index, index + PAGE_CONCURRENCY);
-        const pages = await Promise.all(batch.map((from) => fetchPage(from)));
-        pages.forEach((page) => rows.push(...page.data));
-      }
-
-      return rows.map(normalizeRow);
-    },
-    staleTime: 20 * 60 * 1000,
-    gcTime: 60 * 60 * 1000,
-    refetchOnWindowFocus: false,
+    queryKey: preciosQueryKey,
+    queryFn: fetchPrecios,
+    ...LONG_LIVED_QUERY_OPTIONS,
   });
 }

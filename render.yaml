@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: logistics-renderer
+    runtime: docker
+    rootDir: services/logistics-renderer
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: RENDERER_TOKEN
+        sync: false
