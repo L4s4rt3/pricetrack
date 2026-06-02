@@ -175,6 +175,21 @@ const tripFields = [
   ["documento2", "Documento 2", "text"],
 ] as const;
 
+const routeTripFields = [
+  ["fechaCarga", "Fecha carga", "date"],
+  ["horaCarga", "Hora carga", "time"],
+  ["fechaDescarga", "Fecha descarga", "date"],
+  ["horaDescarga", "Hora descarga", "time"],
+  ["bultos", "Bultos / palets", "text"],
+  ["mercancia", "Mercancia", "text"],
+  ["peso", "Peso kg", "text"],
+  ["tractora", "Tractora", "text"],
+  ["remolque", "Remolque", "text"],
+  ["conductor", "Conductor", "text"],
+  ["documento1", "Documento 1", "text"],
+  ["documento2", "Documento 2", "text"],
+] as const;
+
 function normalize(value: string) {
   return value
     .normalize("NFD")
@@ -655,6 +670,7 @@ export default function Logistica() {
   const [templates, setTemplates] = useState<LogisticsTemplateRow[]>([]);
   const [clients, setClients] = useState<CmrClient[]>([]);
   const [carriers, setCarriers] = useState<CmrCarrier[]>([]);
+  const [documentMode, setDocumentMode] = useState<DocumentKind>("cmr");
   const [clientQuery, setClientQuery] = useState("");
   const [carrierQuery, setCarrierQuery] = useState("");
   const [selectedClientKey, setSelectedClientKey] = useState("");
@@ -715,7 +731,7 @@ export default function Logistica() {
         const cachedCarriers = await readPersistentQuery<CmrCarrier[]>(cmrCarriersQueryKey);
         if (cachedPresets) setPresets(cachedPresets.data);
         if (cachedTemplates) setTemplates(cachedTemplates.data);
-        if (cachedClients && cachedCarriers) {
+        if (cachedClients?.data?.length && cachedCarriers?.data?.length) {
           setClients(cachedClients.data);
           setCarriers(cachedCarriers.data);
           return;
@@ -749,6 +765,9 @@ export default function Logistica() {
 
       const loadedClients = (clientResult.data ?? []) as CmrClient[];
       const loadedCarriers = (carrierResult.data ?? []) as CmrCarrier[];
+      if (loadedClients.length === 0 || loadedCarriers.length === 0) {
+        throw new Error(`Supabase no devolvio datos de logistica: ${loadedClients.length} clientes y ${loadedCarriers.length} transportistas.`);
+      }
       setClients(loadedClients);
       setCarriers(loadedCarriers);
       void writePersistentQuery(cmrClientsQueryKey, loadedClients);
@@ -875,11 +894,14 @@ export default function Logistica() {
     toast.success("Ficha guardada en este dispositivo");
   };
 
+  const documentTitle = documentMode === "cmr" ? "CMR" : "Hoja de Ruta";
+  const activeTripFields = documentMode === "cmr" ? tripFields : routeTripFields;
+
   return (
     <div className="page-shell">
       <PageHeader
         title="Logistica"
-        subtitle="Fichas reutilizables por cliente con datos variables de cada viaje"
+        subtitle="Crea CMR y hojas de ruta desde datos reutilizables"
       >
         <Button variant="outline" onClick={() => loadData({ force: true })} disabled={loading}>
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
@@ -888,10 +910,10 @@ export default function Logistica() {
       </PageHeader>
 
       <section className="metric-strip">
-        <KPICard label="Clientes CMR" value={String(clients.length)} hint="Destinatarios extraidos de PDFs" icon={Clipboard} />
-        <KPICard label="Carriers" value={String(carriers.length)} hint="Transportistas extraidos de PDFs" icon={Truck} />
-        <KPICard label="CMR" value="1" hint="Plantilla PDF base lista" icon={FileText} />
-        <KPICard label="Salida" value="PDF / Excel" hint="Imprimir, revisar o editar" icon={FileSpreadsheet} />
+        <KPICard label="Clientes" value={String(clients.length)} hint="Destinatarios extraidos de CMR" icon={Clipboard} />
+        <KPICard label="Transportistas" value={String(carriers.length)} hint="Carriers reutilizables" icon={Truck} />
+        <KPICard label="CMR" value="PDF" hint="Plantilla oficial rellenable" icon={FileText} />
+        <KPICard label="Hojas de Ruta" value="PDF / Excel" hint="Documento interno" icon={FileSpreadsheet} />
       </section>
 
       {error && (
@@ -900,18 +922,26 @@ export default function Logistica() {
         </div>
       )}
 
+      <Tabs value={documentMode} onValueChange={(value) => setDocumentMode(value as DocumentKind)} className="space-y-4">
+        <TabsList className="glass-strong">
+          <TabsTrigger value="cmr">CMR</TabsTrigger>
+          <TabsTrigger value="route">Hojas de Ruta</TabsTrigger>
+        </TabsList>
+
       <div className="grid gap-4 xl:grid-cols-[minmax(20rem,25rem),1fr]">
         <Card className="glass-accented">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <Truck className="h-4 w-4 text-primary" />
-              CMR
+              {documentMode === "cmr" ? <FileText className="h-4 w-4 text-primary" /> : <Route className="h-4 w-4 text-primary" />}
+              {documentTitle}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="space-y-3">
               <div className="flex min-h-9 items-center justify-between gap-2">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Destinatario</Label>
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {documentMode === "cmr" ? "Destinatario" : "Cliente / destino"}
+                </Label>
                 {(selectedClientKey || clientQuery) && (
                   <Button type="button" variant="ghost" size="sm" onClick={clearSelectedClient} className="h-8 px-2 text-xs">
                     <X className="mr-1.5 h-3.5 w-3.5" />
@@ -955,7 +985,9 @@ export default function Logistica() {
 
             <div className="space-y-3">
               <div className="flex min-h-9 items-center justify-between gap-2">
-                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Carrier</Label>
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {documentMode === "cmr" ? "Carrier" : "Transportista"}
+                </Label>
                 {(selectedCarrierKey || carrierQuery) && (
                   <Button type="button" variant="ghost" size="sm" onClick={clearSelectedCarrier} className="h-8 px-2 text-xs">
                     <X className="mr-1.5 h-3.5 w-3.5" />
@@ -1002,8 +1034,8 @@ export default function Logistica() {
         <div className="space-y-4">
           <Tabs defaultValue="fixed" className="space-y-4">
             <TabsList className="glass-strong">
-              <TabsTrigger value="fixed">Datos fijos</TabsTrigger>
-              <TabsTrigger value="trip">Datos del viaje</TabsTrigger>
+              <TabsTrigger value="fixed">Ficha</TabsTrigger>
+              <TabsTrigger value="trip">{documentMode === "cmr" ? "Datos CMR" : "Datos ruta"}</TabsTrigger>
               <TabsTrigger value="export">Exportar</TabsTrigger>
             </TabsList>
 
@@ -1056,7 +1088,7 @@ export default function Logistica() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid gap-3 md:grid-cols-2">
-                    {tripFields.map(([key, label, type]) => (
+                    {activeTripFields.map(([key, label, type]) => (
                       <div key={key}>
                         <Label htmlFor={key} className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                           {label}
@@ -1078,33 +1110,37 @@ export default function Logistica() {
                         onChange={(value) => updateTrip("observaciones", value)}
                       />
                     </div>
-                    <div className="md:col-span-2">
-                      <TextAreaField
-                        id="successiveCarriers"
-                        label="Cuadro 7. Successive carriers"
-                        value={trip.successiveCarriers}
-                        onChange={(value) => updateTrip("successiveCarriers", value)}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <TextAreaField
-                        id="carrierReservations"
-                        label="Cuadro 8. Carrier reservations"
-                        value={trip.carrierReservations}
-                        onChange={(value) => updateTrip("carrierReservations", value)}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <TextAreaField
-                        id="specialAgreements"
-                        label="Cuadro 16. Special agreements"
-                        value={trip.specialAgreements}
-                        onChange={(value) => updateTrip("specialAgreements", value)}
-                        rows={4}
-                      />
-                    </div>
+                    {documentMode === "cmr" && (
+                      <>
+                        <div className="md:col-span-2">
+                          <TextAreaField
+                            id="successiveCarriers"
+                            label="Cuadro 7. Successive carriers"
+                            value={trip.successiveCarriers}
+                            onChange={(value) => updateTrip("successiveCarriers", value)}
+                            rows={3}
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <TextAreaField
+                            id="carrierReservations"
+                            label="Cuadro 8. Carrier reservations"
+                            value={trip.carrierReservations}
+                            onChange={(value) => updateTrip("carrierReservations", value)}
+                            rows={3}
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <TextAreaField
+                            id="specialAgreements"
+                            label="Cuadro 16. Special agreements"
+                            value={trip.specialAgreements}
+                            onChange={(value) => updateTrip("specialAgreements", value)}
+                            rows={4}
+                          />
+                        </div>
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1132,22 +1168,29 @@ export default function Logistica() {
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-2">
-                    <Button onClick={() => printDocument("route")}>
-                      <Printer className="mr-2 h-4 w-4" />
-                      Hoja de ruta PDF
-                    </Button>
-                    <Button variant="outline" onClick={() => exportExcel("route")}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Hoja de ruta Excel
-                    </Button>
-                    <Button onClick={exportExactCmrPdf}>
-                      <Printer className="mr-2 h-4 w-4" />
-                      CMR PDF
-                    </Button>
-                    <Button variant="outline" onClick={() => exportExcel("cmr")}>
-                      <Download className="mr-2 h-4 w-4" />
-                      CMR Excel
-                    </Button>
+                    {documentMode === "route" ? (
+                      <>
+                        <Button onClick={() => printDocument("route")}>
+                          <Printer className="mr-2 h-4 w-4" />
+                          Hoja de ruta PDF
+                        </Button>
+                        <Button variant="outline" onClick={() => exportExcel("route")}>
+                          <Download className="mr-2 h-4 w-4" />
+                          Hoja de ruta Excel
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button onClick={exportExactCmrPdf}>
+                          <Printer className="mr-2 h-4 w-4" />
+                          CMR PDF
+                        </Button>
+                        <Button variant="outline" onClick={() => exportExcel("cmr")}>
+                          <Download className="mr-2 h-4 w-4" />
+                          CMR Excel
+                        </Button>
+                      </>
+                    )}
                   </div>
 
                   <Button variant="outline" onClick={copySummary}>
@@ -1160,6 +1203,7 @@ export default function Logistica() {
           </Tabs>
         </div>
       </div>
+      </Tabs>
     </div>
   );
 }
