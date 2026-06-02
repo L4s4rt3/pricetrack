@@ -713,9 +713,9 @@ export default function Logistica() {
         const cachedTemplates = await readPersistentQuery<LogisticsTemplateRow[]>(templatesQueryKey);
         const cachedClients = await readPersistentQuery<CmrClient[]>(cmrClientsQueryKey);
         const cachedCarriers = await readPersistentQuery<CmrCarrier[]>(cmrCarriersQueryKey);
-        if (cachedPresets && cachedTemplates && cachedClients && cachedCarriers) {
-          setPresets(cachedPresets.data);
-          setTemplates(cachedTemplates.data);
+        if (cachedPresets) setPresets(cachedPresets.data);
+        if (cachedTemplates) setTemplates(cachedTemplates.data);
+        if (cachedClients && cachedCarriers) {
           setClients(cachedClients.data);
           setCarriers(cachedCarriers.data);
           return;
@@ -727,15 +727,7 @@ export default function Logistica() {
         await removePersistentQuery(cmrCarriersQueryKey);
       }
 
-      const [presetResult, templateResult, clientResult, carrierResult] = await Promise.all([
-        supabase
-          .from("logistics_presets")
-          .select("id,preset_key,name,sender,consignee,carrier,load_place,load_country,delivery_place,delivery_country,default_goods,default_instructions,source_files")
-          .order("name", { ascending: true }),
-        supabase
-          .from("logistics_templates")
-          .select("kind,name,original_path,storage_path")
-          .order("name", { ascending: true }),
+      const [clientResult, carrierResult] = await Promise.all([
         supabase
           .from("cmr_clients")
           .select("client_key,name,consignee,transitario,country,default_goods,is_edeka,occurrences")
@@ -750,10 +742,6 @@ export default function Logistica() {
         describeLoadError("Clientes CMR", clientResult.error),
         describeLoadError("Transportistas CMR", carrierResult.error),
       ].filter(Boolean);
-      const secondaryErrors = [
-        describeLoadError("Fichas antiguas", presetResult.error),
-        describeLoadError("Plantillas antiguas", templateResult.error),
-      ].filter(Boolean);
 
       if (blockingErrors.length > 0) {
         throw new Error(blockingErrors.join(" | "));
@@ -765,22 +753,6 @@ export default function Logistica() {
       setCarriers(loadedCarriers);
       void writePersistentQuery(cmrClientsQueryKey, loadedClients);
       void writePersistentQuery(cmrCarriersQueryKey, loadedCarriers);
-
-      if (!presetResult.error) {
-        const loadedPresets = (presetResult.data ?? []) as LogisticsPreset[];
-        setPresets(loadedPresets);
-        void writePersistentQuery(presetsQueryKey, loadedPresets);
-      }
-
-      if (!templateResult.error) {
-        const loadedTemplates = (templateResult.data ?? []) as LogisticsTemplateRow[];
-        setTemplates(loadedTemplates);
-        void writePersistentQuery(templatesQueryKey, loadedTemplates);
-      }
-
-      if (secondaryErrors.length > 0) {
-        setError(`CMR cargado. Datos secundarios no disponibles: ${secondaryErrors.join(" | ")}`);
-      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las fichas de logistica.");
     } finally {
@@ -918,7 +890,7 @@ export default function Logistica() {
       <section className="metric-strip">
         <KPICard label="Clientes CMR" value={String(clients.length)} hint="Destinatarios extraidos de PDFs" icon={Clipboard} />
         <KPICard label="Carriers" value={String(carriers.length)} hint="Transportistas extraidos de PDFs" icon={Truck} />
-        <KPICard label="CMR" value={String(templates.filter((template) => template.kind === "cmr").length)} hint="Fuente historica analizada" icon={FileText} />
+        <KPICard label="CMR" value="1" hint="Plantilla PDF base lista" icon={FileText} />
         <KPICard label="Salida" value="PDF / Excel" hint="Imprimir, revisar o editar" icon={FileSpreadsheet} />
       </section>
 
