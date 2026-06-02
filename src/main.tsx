@@ -15,7 +15,7 @@ const queryClient = new QueryClient({
       refetchOnMount: false,
       refetchOnReconnect: false,
       placeholderData: (previousData: unknown) => previousData,
-      retry: 1,
+      retry: 0,
     },
   },
 });

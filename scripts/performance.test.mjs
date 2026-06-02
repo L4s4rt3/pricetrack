@@ -6,10 +6,11 @@ const pagePreloads = readFileSync(new URL("../src/lib/pagePreloads.ts", import.m
 const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const viteConfig = readFileSync(new URL("../vite.config.ts", import.meta.url), "utf8");
 
-test("route preloading is limited to critical entry points instead of every lazy page", () => {
+test("app startup does not preload heavy routes or historical datasets", () => {
   assert.match(pagePreloads, /export const criticalPagePreloaders/);
   assert.doesNotMatch(app, /scheduleRoutePreload\(pagePreloaders\)/);
-  assert.match(app, /scheduleRoutePreload\(criticalPagePreloaders\)/);
+  assert.doesNotMatch(app, /scheduleRoutePreload\(/);
+  assert.doesNotMatch(app, /prefetchQuery\(/);
 });
 
 test("vite chunks separate heavy vendors by responsibility", () => {

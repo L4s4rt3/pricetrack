@@ -1,14 +1,10 @@
-import { Suspense, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { Suspense } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import AppLayout from "@/components/AppLayout";
 import { Toaster } from "@/components/ui/sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-import { confeccionQueryKey, fetchConfeccion } from "@/hooks/useConfeccion";
-import { fetchPrecios, preciosQueryKey } from "@/hooks/usePrecios";
-import { LONG_LIVED_QUERY_OPTIONS } from "@/lib/persistentQueryCache";
-import { criticalPagePreloaders, pageLoaders } from "@/lib/pagePreloads";
-import { lazyWithPreload, scheduleRoutePreload } from "@/lib/routePreload";
+import { pageLoaders } from "@/lib/pagePreloads";
+import { lazyWithPreload } from "@/lib/routePreload";
 
 const Dashboard = lazyWithPreload(pageLoaders["/"]);
 const Comercial = lazyWithPreload(pageLoaders["/comercial"]);
@@ -43,35 +39,6 @@ function PageLoader() {
 
 export default function App() {
   const location = useLocation();
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    scheduleRoutePreload(criticalPagePreloaders);
-  }, []);
-
-  useEffect(() => {
-    const preloadData = () => {
-      void queryClient.prefetchQuery({
-        queryKey: preciosQueryKey,
-        queryFn: fetchPrecios,
-        ...LONG_LIVED_QUERY_OPTIONS,
-      });
-      void queryClient.prefetchQuery({
-        queryKey: confeccionQueryKey,
-        queryFn: fetchConfeccion,
-        ...LONG_LIVED_QUERY_OPTIONS,
-      });
-    };
-
-    const idleCallback = globalThis.requestIdleCallback;
-    if (idleCallback) {
-      const id = idleCallback(preloadData, { timeout: 3500 });
-      return () => globalThis.cancelIdleCallback?.(id);
-    }
-
-    const id = globalThis.setTimeout(preloadData, 1200);
-    return () => globalThis.clearTimeout(id);
-  }, [queryClient]);
 
   return (
     <>

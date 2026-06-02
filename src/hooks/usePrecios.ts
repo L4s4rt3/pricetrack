@@ -5,7 +5,7 @@ import { LONG_LIVED_QUERY_OPTIONS, readPersistentQuery, writePersistentQuery } f
 import type { PrecioRow } from "@/lib/types";
 
 const PAGE_SIZE = 1000;
-const PAGE_CONCURRENCY = 14;
+const PAGE_CONCURRENCY = 3;
 export const preciosQueryKey = ["precios", MIN_CAMPAIGN_START] as const;
 
 function normalizeRow(row: Record<string, unknown>): PrecioRow {

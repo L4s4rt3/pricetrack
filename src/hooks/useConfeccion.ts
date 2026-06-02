@@ -5,7 +5,7 @@ import { LONG_LIVED_QUERY_OPTIONS, readPersistentQuery, writePersistentQuery } f
 import type { ConfeccionRow } from "@/lib/types";
 
 const PAGE_SIZE = 1000;
-const PAGE_CONCURRENCY = 12;
+const PAGE_CONCURRENCY = 3;
 export const confeccionQueryKey = ["confeccion", MIN_CONFECCION_DATE] as const;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
