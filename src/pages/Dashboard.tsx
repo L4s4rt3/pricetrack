@@ -20,13 +20,13 @@ export default function Dashboard() {
   const deferredFilters = useDeferredValue(filters);
   const [selectedCampaign, setSelectedCampaign] = useState("");
   const filtered = useMemo(() => filterSales(rows, deferredFilters), [rows, deferredFilters]);
-  const campaigns = useMemo(() => Array.from(new Set(filtered.map((row) => row.campaign))).sort((a, b) => a - b), [filtered]);
-  const currentCampaign = Number(selectedCampaign || campaigns[campaigns.length - 1] || new Date().getFullYear());
+  const campaigns = useMemo(() => Array.from(new Set(filtered.map((row) => row.campaign))).sort((a, b) => b - a), [filtered]);
+  const currentCampaign = Number(selectedCampaign || campaigns[0] || new Date().getFullYear());
   const currentRows = useMemo(() => campaignRows(filtered, currentCampaign), [filtered, currentCampaign]);
   const currentProductRows = useMemo(() => productPriceRows(currentRows), [currentRows]);
   const stats = summaryStats(currentRows);
 
-  const annualData = campaigns.map((campaign) => ({
+  const annualData = [...campaigns].reverse().map((campaign) => ({
     label: campaignLabel(campaign),
     price: Number(productWeightedPrice(campaignRows(filtered, campaign)).toFixed(3)),
   }));
