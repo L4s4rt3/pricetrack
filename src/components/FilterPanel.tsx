@@ -25,7 +25,7 @@ export function FilterPanel({ children, title, meta, className }: FilterPanelPro
 export function FilterField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</label>
+      <label className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">{label}</label>
       {children}
     </div>
   );

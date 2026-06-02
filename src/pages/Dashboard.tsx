@@ -69,7 +69,7 @@ export default function Dashboard() {
       </section>
       <SaleFilterPanel rows={rows} filters={filters} onChange={setFilters} compact />
       <div className="section-toolbar">
-        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Campana activa</label>
+        <label className="text-[10px] font-semibold uppercase tracking-normal text-muted-foreground">Campana activa</label>
         <Select value={String(selectedCampaign || currentCampaign)} onValueChange={setSelectedCampaign}>
           <SelectTrigger className="h-10 w-auto min-w-[160px]">
             <SelectValue />
@@ -103,7 +103,7 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </ChartCard>
       </div>
-      <ChartCard title={`Precio producto mensual · ${campaignLabel(currentCampaign)}`}>
+      <ChartCard title={`Precio producto mensual - ${campaignLabel(currentCampaign)}`}>
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={monthlyData} margin={MARGIN}>
             <CartesianGrid {...GRID} />

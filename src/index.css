@@ -1297,3 +1297,149 @@
     background: hsl(190 100% 58% / 0.07);
   }
 }
+
+@layer components {
+  .page-shell,
+  .route-page,
+  .content-panel {
+    isolation: isolate;
+  }
+
+  .page-header {
+    position: relative;
+    z-index: 4;
+    overflow: hidden;
+  }
+
+  .metric-strip,
+  .section-toolbar,
+  .filter-panel,
+  .chart-card,
+  .data-table-shell {
+    position: relative;
+    z-index: 1;
+  }
+
+  .metric-strip {
+    z-index: 3;
+  }
+
+  .section-toolbar,
+  .filter-panel {
+    z-index: 2;
+  }
+
+  .chart-card,
+  .data-table-shell,
+  .metric-card,
+  .glass-card,
+  .content-panel {
+    isolation: isolate;
+    overflow: hidden;
+  }
+
+  .chart-card,
+  .chart-panel,
+  .data-table-shell {
+    border-radius: 8px;
+  }
+
+  .chart-panel {
+    position: relative;
+    background:
+      linear-gradient(135deg, hsl(190 100% 58% / 0.10), transparent 38%),
+      linear-gradient(225deg, hsl(284 90% 64% / 0.08), transparent 42%),
+      linear-gradient(180deg, hsl(0 0% 100% / 0.24), hsl(0 0% 100% / 0.06)),
+      hsl(var(--glass-bg));
+    box-shadow: var(--glass-shadow-sm), var(--glass-inner);
+  }
+
+  .chart-panel::before,
+  .data-table-shell::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background:
+      linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.22), transparent) 0 0 / 100% 1px no-repeat,
+      radial-gradient(circle at 18% 0%, hsl(190 100% 58% / 0.16), transparent 34%),
+      radial-gradient(circle at 88% 0%, hsl(284 90% 64% / 0.12), transparent 32%);
+  }
+
+  .chart-panel > *,
+  .data-table-shell > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .chart-panel .recharts-wrapper,
+  .chart-panel .recharts-surface {
+    overflow: visible;
+  }
+
+  .chart-panel .recharts-cartesian-grid line {
+    opacity: 0.5;
+  }
+
+  .chart-panel .recharts-cartesian-axis-tick text,
+  .chart-panel .recharts-legend-item-text {
+    letter-spacing: 0;
+  }
+
+  .chart-panel .recharts-line-curve,
+  .chart-panel .recharts-area-area,
+  .chart-panel .recharts-bar-rectangle path,
+  .chart-panel .recharts-sector {
+    filter: drop-shadow(0 10px 18px hsl(220 40% 10% / 0.10));
+  }
+
+  .data-table-shell {
+    background:
+      linear-gradient(180deg, hsl(0 0% 100% / 0.22), transparent 26%),
+      hsl(var(--glass-bg));
+    box-shadow: var(--glass-shadow-sm), var(--glass-inner);
+  }
+
+  .data-table-shell thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    border-bottom: 1px solid hsl(var(--glass-border));
+    background:
+      linear-gradient(180deg, hsl(0 0% 100% / 0.44), hsl(0 0% 100% / 0.12)),
+      hsl(var(--glass-bg-solid));
+    backdrop-filter: blur(22px) saturate(1.35);
+  }
+
+  .data-table tbody td {
+    border-bottom: 1px solid hsl(var(--glass-border));
+  }
+
+  .data-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+
+  .table-row {
+    transition: background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  }
+
+  .table-row:hover {
+    box-shadow: inset 3px 0 0 hsl(var(--primary) / 0.62);
+  }
+
+  .metric-card {
+    position: relative;
+    box-shadow: var(--glass-shadow-sm), var(--glass-inner);
+  }
+
+  .metric-card::before {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 16% 0%, hsl(190 100% 58% / 0.18), transparent 34%),
+      radial-gradient(circle at 90% 0%, hsl(284 90% 64% / 0.12), transparent 34%);
+  }
+}

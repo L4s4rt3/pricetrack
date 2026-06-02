@@ -1,23 +1,23 @@
 export const C = {
-  primary: "#c47a20",
-  primaryLight: "#a06818",
-  success: "#5a8a4e",
-  warning: "#c47a20",
-  destructive: "#c44030",
-  info: "#5a7a8a",
-  muted: "#9a8a7a",
-  gold: "#b08030",
-  orange: "#c47a20",
-  purple: "#8a6a7a",
+  primary: "#0A84FF",
+  primaryLight: "#64D2FF",
+  success: "#30D158",
+  warning: "#FFD60A",
+  destructive: "#FF453A",
+  info: "#5AC8FA",
+  muted: "#8E8E93",
+  gold: "#FFD60A",
+  orange: "#FF9F0A",
+  purple: "#BF5AF2",
 };
 
 export const CHART_COLORS = {
-  exportacion: "#c47a20",
-  mercado: "#5a7a8a",
-  noExportacion: "#c45a3a",
-  noComercial: "#a08030",
-  mujeres: "#8a6a7a",
-  otro: "#7a7a7a",
+  exportacion: "#0A84FF",
+  mercado: "#64D2FF",
+  noExportacion: "#FF453A",
+  noComercial: "#FF9F0A",
+  mujeres: "#BF5AF2",
+  otro: "#8E8E93",
 };
 
 export function barFill(color: string, opacity: number): string {
@@ -30,30 +30,30 @@ export function barFill(color: string, opacity: number): string {
 
 export const GRID = {
   vertical: false as const,
-  stroke: "hsl(var(--border))",
-  strokeDasharray: "4 6",
+  stroke: "hsl(var(--glass-border-accent))",
+  strokeDasharray: "3 8",
 };
 
 export const XAXIS = {
   fontSize: 10,
-  tick: { fill: "hsl(var(--muted-foreground))" },
+  tick: { fill: "hsl(var(--muted-foreground))", letterSpacing: 0 },
   axisLine: false,
   tickLine: false,
 };
 
 export const YAXIS = {
   fontSize: 10,
-  tick: { fill: "hsl(var(--muted-foreground))" },
+  tick: { fill: "hsl(var(--muted-foreground))", letterSpacing: 0 },
   axisLine: false,
   tickLine: false,
   width: 40,
 };
 
-export const MARGIN = { top: 8, right: 8, bottom: 4, left: 4 };
+export const MARGIN = { top: 12, right: 12, bottom: 6, left: 4 };
 
 export const BAR_STYLE = {
-  radius: [7, 7, 2, 2] as [number, number, number, number],
-  maxBarSize: 32,
+  radius: [8, 8, 3, 3] as [number, number, number, number],
+  maxBarSize: 28,
 };
 
 export const PIE_STYLE = {
@@ -64,7 +64,7 @@ export const CHART_CURSOR = { fill: "hsl(var(--glass-bg-strong))", stroke: "hsl(
 export const CHART_LINE_CURSOR = { stroke: "hsl(var(--glass-border-accent))", strokeDasharray: "3 3" };
 
 export function activeDotStyle(color: string) {
-  return { r: 5, fill: color, stroke: "hsl(var(--glass-bg-strong))", strokeWidth: 2 };
+  return { r: 5, fill: color, stroke: "hsl(var(--background))", strokeWidth: 2 };
 }
 
 export const CHART_PANEL_CLASS = "chart-panel";
@@ -80,7 +80,8 @@ export function GlassTooltip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border border-[hsl(var(--glass-border-accent))] bg-[hsl(var(--glass-bg-solid))] px-3.5 py-2.5 text-xs shadow-[var(--glass-shadow-lg)] backdrop-blur-xl">
+    <div className="relative overflow-hidden rounded-[8px] border border-[hsl(var(--glass-border-accent))] bg-[hsl(var(--glass-bg-solid))] px-3.5 py-2.5 text-xs shadow-[var(--glass-shadow-lg)] backdrop-blur-2xl">
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[hsl(var(--primary))] to-transparent opacity-70" />
       <p className="mb-1 font-medium text-foreground">{label}</p>
       {payload.map((item, index) => (
         <div key={index} className="flex items-center gap-2">

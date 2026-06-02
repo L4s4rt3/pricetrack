@@ -18,13 +18,13 @@ interface DataTableProps<T> {
 
 export function DataTable<T>({ rows, columns, empty = "Sin datos", className, getRowKey }: DataTableProps<T>) {
   return (
-    <div className={cn("data-table-shell overflow-hidden rounded-lg border border-[hsl(var(--glass-border))] bg-[hsl(var(--glass-bg))]", className)}>
+    <div className={cn("data-table-shell relative isolate overflow-hidden rounded-[8px] border border-[hsl(var(--glass-border))] bg-[hsl(var(--glass-bg))]", className)}>
       <div className="table-scroll overflow-x-auto">
-        <table className="w-full min-w-[760px] table-fixed text-left text-sm">
-          <thead className="table-head text-[10px] uppercase tracking-wider text-muted-foreground">
+        <table className="data-table w-full min-w-[760px] table-fixed border-separate border-spacing-0 text-left text-sm">
+          <thead className="table-head text-[10px] uppercase tracking-normal text-muted-foreground">
             <tr>
               {columns.map((column) => (
-                <th key={column.key} className={cn("px-4 py-3 font-semibold", column.className)}>
+                <th key={column.key} className={cn("px-4 py-3 font-semibold leading-tight", column.className)}>
                   <span>{column.header}</span>
                 </th>
               ))}
@@ -41,7 +41,7 @@ export function DataTable<T>({ rows, columns, empty = "Sin datos", className, ge
               rows.map((row, index) => (
                 <tr key={getRowKey ? getRowKey(row, index) : index} className="table-row">
                   {columns.map((column) => (
-                    <td key={column.key} className={cn("px-4 py-3 align-top", column.className)}>
+                    <td key={column.key} className={cn("px-4 py-3 align-top leading-snug", column.className)}>
                       {column.cell(row)}
                     </td>
                   ))}
