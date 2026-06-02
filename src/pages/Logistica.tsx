@@ -231,6 +231,77 @@ function presetFromTemplate(template: LogisticsTemplateRow): LogisticsPreset {
   };
 }
 
+function firstLine(value: string) {
+  return value.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? "";
+}
+
+function preferFilled(current: string, next: string) {
+  const cleanNext = next.trim();
+  if (!cleanNext) return current;
+  return cleanNext.length > current.length ? cleanNext : current;
+}
+
+function buildCmrClientsFromPresets(presets: LogisticsPreset[]): CmrClient[] {
+  const clients = new Map<string, CmrClient>();
+  for (const preset of presets) {
+    const name = cleanName(preset.name || firstLine(preset.consignee));
+    const consignee = preset.consignee.trim();
+    if (!name && !consignee) continue;
+
+    const clientKey = slug(name || firstLine(consignee));
+    const current = clients.get(clientKey);
+    if (!current) {
+      clients.set(clientKey, {
+        client_key: clientKey,
+        name: name || firstLine(consignee) || "Cliente sin nombre",
+        consignee,
+        transitario: preset.delivery_place.trim(),
+        country: preset.delivery_country.trim(),
+        default_goods: preset.default_goods.trim(),
+        is_edeka: normalize(`${name} ${consignee}`).includes("edeka"),
+        occurrences: 1,
+      });
+      continue;
+    }
+
+    current.occurrences += 1;
+    current.consignee = preferFilled(current.consignee, consignee);
+    current.transitario = preferFilled(current.transitario, preset.delivery_place);
+    current.country = preferFilled(current.country, preset.delivery_country);
+    current.default_goods = preferFilled(current.default_goods, preset.default_goods);
+    current.is_edeka = current.is_edeka || normalize(`${name} ${consignee}`).includes("edeka");
+  }
+
+  return Array.from(clients.values()).sort((a, b) => b.occurrences - a.occurrences || a.name.localeCompare(b.name, "es"));
+}
+
+function buildCmrCarriersFromPresets(presets: LogisticsPreset[]): CmrCarrier[] {
+  const carriers = new Map<string, CmrCarrier>();
+  for (const preset of presets) {
+    const details = preset.carrier.trim();
+    if (!details) continue;
+
+    const name = cleanName(firstLine(details));
+    const carrierKey = slug(name || details);
+    const current = carriers.get(carrierKey);
+    if (!current) {
+      carriers.set(carrierKey, {
+        carrier_key: carrierKey,
+        name: name || "Transportista sin nombre",
+        details,
+        country: "",
+        occurrences: 1,
+      });
+      continue;
+    }
+
+    current.occurrences += 1;
+    current.details = preferFilled(current.details, details);
+  }
+
+  return Array.from(carriers.values()).sort((a, b) => b.occurrences - a.occurrences || a.name.localeCompare(b.name, "es"));
+}
+
 function escapeXml(value?: string) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -763,10 +834,30 @@ export default function Logistica() {
         throw new Error(blockingErrors.join(" | "));
       }
 
-      const loadedClients = (clientResult.data ?? []) as CmrClient[];
-      const loadedCarriers = (carrierResult.data ?? []) as CmrCarrier[];
+      let loadedClients = (clientResult.data ?? []) as CmrClient[];
+      let loadedCarriers = (carrierResult.data ?? []) as CmrCarrier[];
       if (loadedClients.length === 0 || loadedCarriers.length === 0) {
-        throw new Error(`Supabase no devolvio datos de logistica: ${loadedClients.length} clientes y ${loadedCarriers.length} transportistas.`);
+        const presetResult = await supabase
+          .from("logistics_presets")
+          .select("preset_key,name,sender,consignee,carrier,load_place,load_country,delivery_place,delivery_country,default_goods,default_instructions,source_files")
+          .order("name", { ascending: true })
+          .range(0, 4999);
+
+        if (presetResult.error) {
+          throw new Error(`Supabase no devolvio datos de logistica: ${loadedClients.length} clientes y ${loadedCarriers.length} transportistas. Fichas antiguas: ${presetResult.error.message}`);
+        }
+
+        const fallbackPresets = (presetResult.data ?? []) as LogisticsPreset[];
+        if (fallbackPresets.length > 0) {
+          setPresets(fallbackPresets);
+          void writePersistentQuery(presetsQueryKey, fallbackPresets);
+          if (loadedClients.length === 0) loadedClients = buildCmrClientsFromPresets(fallbackPresets);
+          if (loadedCarriers.length === 0) loadedCarriers = buildCmrCarriersFromPresets(fallbackPresets);
+        }
+
+        if (loadedClients.length === 0 || loadedCarriers.length === 0) {
+          throw new Error(`Supabase no devolvio datos de logistica: ${loadedClients.length} clientes y ${loadedCarriers.length} transportistas.`);
+        }
       }
       setClients(loadedClients);
       setCarriers(loadedCarriers);
