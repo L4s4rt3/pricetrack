@@ -14,7 +14,7 @@ import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
 import { SaleFilterPanel, campaignRows, filterSales, groupRows, productPriceRows, productWeightedPrice, summaryStats, useEnrichedPrecios, useSaleFilterState } from "./pageHelpers";
 
 export default function Dashboard() {
-  const { data, isLoading } = usePrecios();
+  const { data, isLoading, isFetching } = usePrecios();
   const rows = useEnrichedPrecios(data);
   const [filters, setFilters] = useSaleFilterState();
   const deferredFilters = useDeferredValue(filters);
@@ -35,6 +35,9 @@ export default function Dashboard() {
     return { label, price: Number(productWeightedPrice(currentRows.filter((row) => row.month === month)).toFixed(3)) };
   });
   const varietyData = groupRows(currentProductRows, (row) => row.cls.variety).slice(0, 8);
+  const headerSubtitle = isFetching
+    ? `${formatNum(rows.length)} lineas visibles - cargando historico en segundo plano`
+    : `${formatNum(rows.length)} lineas - desde campana ${MIN_CAMPAIGN_LABEL}`;
 
   if (isLoading) {
     return (
@@ -57,7 +60,7 @@ export default function Dashboard() {
 
   return (
     <div className="page-shell">
-      <PageHeader title="Resumen" subtitle={`${formatNum(rows.length)} lineas · desde campana ${MIN_CAMPAIGN_LABEL}`} />
+      <PageHeader title="Resumen" subtitle={headerSubtitle} />
       <section className="metric-strip">
         <KPICard label="Precio producto" value={`${formatEur(stats.price)}/kg`} hint={campaignLabel(currentCampaign)} icon={DollarSign} />
         <KPICard label="Kilos producto" value={formatKg(stats.productKg)} hint={`${formatNum(currentProductRows.length)} lineas`} icon={Package} />

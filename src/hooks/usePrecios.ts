@@ -91,6 +91,11 @@ async function fetchCampaignPage(campaign: number, from: number) {
   return (data ?? []) as unknown as Record<string, unknown>[];
 }
 
+async function fetchCampaignFirstPage(campaign: number) {
+  const rows = await fetchCampaignPage(campaign, 0);
+  return rows.map(normalizeRow);
+}
+
 async function fetchCampaignRows(campaign: number) {
   const firstPage = await supabase
     .from("precios")
@@ -125,7 +130,7 @@ export async function fetchPrecios() {
   }
 
   const latestCampaign = await detectLatestCampaign();
-  return fetchCampaignRows(latestCampaign);
+  return fetchCampaignFirstPage(latestCampaign);
 }
 
 async function hydrateOlderCampaigns(queryClient: QueryClient) {
