@@ -239,6 +239,14 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
 }
 
+function describeLoadError(label: string, error: unknown) {
+  if (!error) return "";
+  if (typeof error === "object" && "message" in error) {
+    return `${label}: ${String((error as { message?: unknown }).message)}`;
+  }
+  return `${label}: ${String(error)}`;
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -738,23 +746,41 @@ export default function Logistica() {
           .order("occurrences", { ascending: false }),
       ]);
 
-      if (presetResult.error) throw presetResult.error;
-      if (templateResult.error) throw templateResult.error;
-      if (clientResult.error) throw clientResult.error;
-      if (carrierResult.error) throw carrierResult.error;
+      const blockingErrors = [
+        describeLoadError("Clientes CMR", clientResult.error),
+        describeLoadError("Transportistas CMR", carrierResult.error),
+      ].filter(Boolean);
+      const secondaryErrors = [
+        describeLoadError("Fichas antiguas", presetResult.error),
+        describeLoadError("Plantillas antiguas", templateResult.error),
+      ].filter(Boolean);
 
-      const loadedPresets = (presetResult.data ?? []) as LogisticsPreset[];
-      const loadedTemplates = (templateResult.data ?? []) as LogisticsTemplateRow[];
+      if (blockingErrors.length > 0) {
+        throw new Error(blockingErrors.join(" | "));
+      }
+
       const loadedClients = (clientResult.data ?? []) as CmrClient[];
       const loadedCarriers = (carrierResult.data ?? []) as CmrCarrier[];
-      setPresets(loadedPresets);
-      setTemplates(loadedTemplates);
       setClients(loadedClients);
       setCarriers(loadedCarriers);
-      void writePersistentQuery(presetsQueryKey, loadedPresets);
-      void writePersistentQuery(templatesQueryKey, loadedTemplates);
       void writePersistentQuery(cmrClientsQueryKey, loadedClients);
       void writePersistentQuery(cmrCarriersQueryKey, loadedCarriers);
+
+      if (!presetResult.error) {
+        const loadedPresets = (presetResult.data ?? []) as LogisticsPreset[];
+        setPresets(loadedPresets);
+        void writePersistentQuery(presetsQueryKey, loadedPresets);
+      }
+
+      if (!templateResult.error) {
+        const loadedTemplates = (templateResult.data ?? []) as LogisticsTemplateRow[];
+        setTemplates(loadedTemplates);
+        void writePersistentQuery(templatesQueryKey, loadedTemplates);
+      }
+
+      if (secondaryErrors.length > 0) {
+        setError(`CMR cargado. Datos secundarios no disponibles: ${secondaryErrors.join(" | ")}`);
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las fichas de logistica.");
     } finally {
