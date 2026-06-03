@@ -1914,7 +1914,7 @@ body {
 
 .liquid-button-danger {
   background:
-    linear-gradient(135deg, hsl(var(--destructive) / 0.90), hsl(346 82% 62% / 0.76)) !important;
+    linear-gradient(135deg, hsl(var(--destructive) / 0.86), hsl(var(--destructive) / 0.62)) !important;
   border-color: hsl(var(--destructive) / 0.40) !important;
 }
 

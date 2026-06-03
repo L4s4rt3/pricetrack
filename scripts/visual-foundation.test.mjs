@@ -71,6 +71,12 @@ test("visual foundation keeps app backgrounds restrained and cold", () => {
   }
 });
 
+test("final CSS does not bypass tokens with vivid literal colors", () => {
+  assert.doesNotMatch(css, /hsl\(346\s+82%\s+62%[^)]*\)/);
+  assert.doesNotMatch(css, /hsl\(190\s+100%\s+\d+%[^)]*\)/);
+  assert.doesNotMatch(css, /hsl\(284\s+90%\s+\d+%[^)]*\)/);
+});
+
 test("final dark semantic tokens stay subdued in the silver foundation", () => {
   const darkBlock = finalCssBlock(".dark");
   const success = hslToken(darkBlock, "--success");
@@ -97,7 +103,7 @@ test("chart theme uses silver and ice accents instead of the old bright palette"
     assert.ok(color.saturation <= 36, `${key} should stay in restrained silver/graphite/ice range`);
   }
 
-  const semanticKeys = ["success", "info", "destructive", "warning"];
+  const semanticKeys = ["success", "info", "destructive", "warning", "orange", "purple", "gold"];
   for (const key of semanticKeys) {
     const color = hexToHsl(chartHex(key));
     assert.ok(color.saturation <= 42, `${key} export should be subdued`);

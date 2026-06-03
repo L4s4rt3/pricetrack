@@ -9,6 +9,9 @@ export const C = {
   silver: "#C9D0D6",
   ice: "#EAF7FF",
   graphite: "#5E6670",
+  gold: "#B6AA86",
+  orange: "#B6AA86",
+  purple: "#A8AEB8",
 };
 
 export const CHART_COLORS = {
