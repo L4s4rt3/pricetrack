@@ -1,23 +1,23 @@
 export const C = {
-  primary: "#0A84FF",
-  primaryLight: "#64D2FF",
-  success: "#30D158",
-  warning: "#FFD60A",
-  destructive: "#FF453A",
-  info: "#5AC8FA",
-  muted: "#8E8E93",
-  gold: "#FFD60A",
-  orange: "#FF9F0A",
-  purple: "#BF5AF2",
+  primary: "#E8EEF2",
+  primaryLight: "#F8FBFF",
+  success: "#8ED9BE",
+  warning: "#C9A65A",
+  destructive: "#D06F6A",
+  info: "#A9D8EA",
+  muted: "#8F98A3",
+  silver: "#C9D0D6",
+  ice: "#EAF7FF",
+  graphite: "#5E6670",
 };
 
 export const CHART_COLORS = {
-  exportacion: "#0A84FF",
-  mercado: "#64D2FF",
-  noExportacion: "#FF453A",
-  noComercial: "#FF9F0A",
-  mujeres: "#BF5AF2",
-  otro: "#8E8E93",
+  exportacion: "#E8EEF2",
+  mercado: "#A9D8EA",
+  noExportacion: "#D06F6A",
+  noComercial: "#C9A65A",
+  mujeres: "#C9D0D6",
+  otro: "#8F98A3",
 };
 
 export function barFill(color: string, opacity: number): string {
