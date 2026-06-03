@@ -29,6 +29,11 @@ export default function Busqueda() {
   const rows = search.data?.rows ?? [];
   const total = search.data?.count ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const errorMessage = search.isError
+    ? search.error instanceof Error
+      ? search.error.message
+      : "No se pudo completar la busqueda."
+    : "";
 
   const columns = useMemo(
     () => [
@@ -134,6 +139,10 @@ export default function Busqueda() {
           {!hasSubmittedCriteria ? (
             <div className="rounded-[8px] border border-dashed border-[hsl(var(--glass-border))] px-4 py-10 text-center text-sm text-muted-foreground">
               Elige texto o filtros y pulsa Buscar. No se carga historico hasta que lo pidas.
+            </div>
+          ) : search.isError ? (
+            <div className="rounded-[8px] border border-destructive/30 bg-destructive/10 px-4 py-6 text-sm text-destructive">
+              {errorMessage}
             </div>
           ) : (
             <>

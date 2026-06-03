@@ -21,8 +21,31 @@ export function hasSearchCriteria(filters: SalesSearchFilters) {
   return Boolean(filters.text.trim() || filters.campaign || filters.month || filters.client || filters.product);
 }
 
-function searchTerm(value: string) {
-  return value.trim().replaceAll("%", "\\%").replaceAll("_", "\\_");
+export function postgrestIlikePattern(value: string) {
+  const escaped = value.trim().replace(/[\\,%"'()*]/g, "\\$&").replaceAll("_", "\\_");
+  return escaped ? `"*${escaped}*"` : "";
+}
+
+function parseOptionalInteger(value: string, label: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+
+  if (!/^\d+$/.test(trimmed)) {
+    throw new Error(`${label} debe ser un numero entero.`);
+  }
+
+  return Number(trimmed);
+}
+
+export function validateSalesSearchFilters(filters: SalesSearchFilters) {
+  const campaignNumber = parseOptionalInteger(filters.campaign, "Campana");
+  const monthNumber = parseOptionalInteger(filters.month, "Mes");
+
+  if (monthNumber !== undefined && (monthNumber < 1 || monthNumber > 12)) {
+    throw new Error("Mes debe estar entre 1 y 12.");
+  }
+
+  return { campaignNumber, monthNumber };
 }
 
 export function normalizeSearchRow(row: Record<string, unknown>): PrecioRow {
@@ -53,6 +76,7 @@ export function normalizeSearchRow(row: Record<string, unknown>): PrecioRow {
 }
 
 export async function fetchSalesSearch({ filters, page, pageSize }: SalesSearchParams) {
+  const { campaignNumber, monthNumber } = validateSalesSearchFilters(filters);
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   let query = supabase
@@ -64,20 +88,20 @@ export async function fetchSalesSearch({ filters, page, pageSize }: SalesSearchP
     .range(from, to)
     .limit(pageSize);
 
-  const text = searchTerm(filters.text);
+  const text = postgrestIlikePattern(filters.text);
   if (text) {
     const fields = ["producto", "categoria", "cliente", "denominacion_social", "documento", "factura", "referencia"];
-    query = query.or(fields.map((field) => `${field}.ilike.%${text}%`).join(","));
+    query = query.or(fields.map((field) => `${field}.ilike.${text}`).join(","));
   }
 
-  if (filters.campaign) query = query.eq("ano", Number(filters.campaign));
-  if (filters.month) query = query.eq("mes", Number(filters.month));
+  if (campaignNumber !== undefined) query = query.eq("ano", campaignNumber);
+  if (monthNumber !== undefined) query = query.eq("mes", monthNumber);
 
-  const client = searchTerm(filters.client);
-  if (client) query = query.or(`cliente.ilike.%${client}%,denominacion_social.ilike.%${client}%`);
+  const client = postgrestIlikePattern(filters.client);
+  if (client) query = query.or(`cliente.ilike.${client},denominacion_social.ilike.${client}`);
 
-  const product = searchTerm(filters.product);
-  if (product) query = query.or(`producto.ilike.%${product}%,categoria.ilike.%${product}%`);
+  const product = postgrestIlikePattern(filters.product);
+  if (product) query = query.or(`producto.ilike.${product},categoria.ilike.${product}`);
 
   const { data, error, count } = await query;
   if (error) throw error;
