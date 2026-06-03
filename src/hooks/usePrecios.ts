@@ -8,8 +8,9 @@ import type { PrecioRow } from "@/lib/types";
 
 const PAGE_SIZE = 1000;
 const PAGE_CONCURRENCY = 3;
-export const preciosQueryKey = ["precios", "latest-campaign", MIN_CAMPAIGN_START] as const;
-export const preciosHistoryQueryKey = ["precios", "full-history", MIN_CAMPAIGN_START] as const;
+const PRECIOS_CACHE_VERSION = "ordered-nulls-last-v2";
+export const preciosQueryKey = ["precios", "latest-campaign", MIN_CAMPAIGN_START, PRECIOS_CACHE_VERSION] as const;
+export const preciosHistoryQueryKey = ["precios", "full-history", MIN_CAMPAIGN_START, PRECIOS_CACHE_VERSION] as const;
 
 let fullDatasetReady = false;
 let historyLoadPromise: Promise<void> | null = null;
@@ -86,7 +87,7 @@ async function fetchCampaignPage(campaign: number, from: number) {
     .select(PRECIOS_SELECT)
     .or(campaignFilter(campaign))
     .order("ano", { ascending: false })
-    .order("mes", { ascending: false })
+    .order("mes", { ascending: false, nullsFirst: false })
     .order("id", { ascending: false })
     .range(from, to);
 
@@ -105,7 +106,7 @@ async function fetchCampaignRows(campaign: number) {
     .select(PRECIOS_SELECT, { count: "exact" })
     .or(campaignFilter(campaign))
     .order("ano", { ascending: false })
-    .order("mes", { ascending: false })
+    .order("mes", { ascending: false, nullsFirst: false })
     .order("id", { ascending: false })
     .range(0, PAGE_SIZE - 1);
 

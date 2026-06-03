@@ -117,6 +117,25 @@ const emptyPreset: LogisticsPreset = {
   source_files: [],
 };
 
+const manualClientFallback: CmrClient = {
+  client_key: "manual",
+  name: "Cliente manual",
+  consignee: "",
+  transitario: "",
+  country: "",
+  default_goods: emptyPreset.default_goods,
+  is_edeka: false,
+  occurrences: 1,
+};
+
+const manualCarrierFallback: CmrCarrier = {
+  carrier_key: "manual",
+  name: "Transportista manual",
+  details: "",
+  country: "",
+  occurrences: 1,
+};
+
 const emptyTrip: TripFields = {
   numeroCarta: "",
   fechaCarga: today,
@@ -932,8 +951,10 @@ export default function Logistica() {
           }
         }
 
-        if (loadedClients.length === 0 || loadedCarriers.length === 0) {
-          throw new Error(`Supabase no devolvio datos de logistica: ${loadedClients.length} clientes y ${loadedCarriers.length} transportistas.${fallbackErrors.length ? ` ${fallbackErrors.join(" | ")}` : ""}`);
+        if (loadedClients.length === 0) loadedClients = [manualClientFallback];
+        if (loadedCarriers.length === 0) loadedCarriers = [manualCarrierFallback];
+        if (fallbackErrors.length > 0) {
+          toast.warning(`Logistica cargada en modo manual. ${fallbackErrors.join(" | ")}`);
         }
       }
       setClients(loadedClients);
