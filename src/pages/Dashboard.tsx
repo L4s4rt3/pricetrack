@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { DollarSign, Package, TrendingUp, Users } from "lucide-react";
+import { AlertCircle, DollarSign, Package, TrendingUp, Users } from "lucide-react";
 import { KPICard } from "@/components/KPICard";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { formatEur, formatKg, formatNum } from "@/lib/format";
 import { BAR_STYLE, C, CHART_PANEL_CLASS, GRID, MARGIN, XAXIS, YAXIS, barFill, GlassTooltip } from "@/lib/chartTheme";
 
 export default function Dashboard() {
-  const { data = [], isLoading } = useDashboardSummary();
+  const { data = [], isLoading, isError, error, refetch } = useDashboardSummary();
   const latest = data[data.length - 1];
   const totals = data.reduce(
     (acc, row) => ({
@@ -52,6 +52,32 @@ export default function Dashboard() {
     );
   }
 
+  if (isError) {
+    const message = error instanceof Error ? error.message : "No se pudo cargar el resumen agregado.";
+
+    return (
+      <div className="page-shell">
+        <PageHeader title="Resumen" subtitle="No se pudo cargar la vista operativa reciente" />
+        <Card className="glass-accented overflow-hidden">
+          <CardContent className="flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] border border-destructive/20 bg-destructive/[0.1] text-destructive">
+                <AlertCircle className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="font-semibold">Error al cargar el resumen</p>
+                <p className="mt-1 text-sm text-muted-foreground">{message}</p>
+              </div>
+            </div>
+            <Button variant="outline" onClick={() => void refetch()}>
+              Reintentar
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="page-shell">
       <PageHeader title="Resumen" subtitle={headerSubtitle}>
@@ -65,15 +91,25 @@ export default function Dashboard() {
         <KPICard label="Clientes activos" value={formatNum(totals.clientes)} hint="Maximo mensual" icon={Users} />
         <KPICard label="Facturacion producto" value={formatEur(totals.facturacion)} hint={`${formatNum(totals.lineas)} lineas`} icon={TrendingUp} />
       </section>
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
-        <ChartCard title="Facturacion y kilos por mes">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <ChartCard title="Facturacion por mes">
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={chartRows} margin={MARGIN}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" {...XAXIS} />
-              <YAxis {...YAXIS} tickFormatter={(value) => formatNum(Number(value))} />
+              <YAxis {...YAXIS} tickFormatter={(value) => formatEur(Number(value))} />
               <Tooltip content={<GlassTooltip />} />
               <Bar dataKey="facturacion" {...BAR_STYLE} fill={barFill(C.primary, 0.26)} stroke={C.primary} name="Facturacion" />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+        <ChartCard title="Kilos por mes">
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={chartRows} margin={MARGIN}>
+              <CartesianGrid {...GRID} />
+              <XAxis dataKey="label" {...XAXIS} />
+              <YAxis {...YAXIS} tickFormatter={(value) => formatKg(Number(value))} />
+              <Tooltip content={<GlassTooltip />} />
               <Bar dataKey="kilos" {...BAR_STYLE} fill={barFill(C.success, 0.22)} stroke={C.success} name="Kilos" />
             </BarChart>
           </ResponsiveContainer>

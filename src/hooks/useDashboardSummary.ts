@@ -15,7 +15,7 @@ export interface DashboardMonthSummary {
   refreshed_at: string | null;
 }
 
-export const dashboardSummaryQueryKey = ["dashboard-summary", "last-6-months"] as const;
+export const dashboardSummaryQueryKey = ["precios", "dashboard-summary", "last-6-months"] as const;
 
 async function fetchDashboardSummary() {
   const { data, error } = await supabase

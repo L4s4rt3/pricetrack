@@ -14,10 +14,21 @@ CREATE INDEX IF NOT EXISTS idx_precios_factura_trgm
 
 CREATE OR REPLACE VIEW public.precios_dashboard_mensual
 WITH (security_invoker = on) AS
+WITH monthly_keys AS (
+  SELECT DISTINCT
+    make_date(ano, COALESCE(mes, 1), 1) AS month_start,
+    ano,
+    mes
+  FROM public.precios
+  WHERE ano IS NOT NULL
+    AND (mes IS NULL OR mes BETWEEN 1 AND 12)
+  ORDER BY month_start DESC
+  LIMIT 6
+)
 SELECT
-  make_date(ano, COALESCE(NULLIF(mes, 0), 1), 1) AS month_start,
-  ano,
-  mes,
+  monthly_keys.month_start,
+  monthly_keys.ano,
+  monthly_keys.mes,
   count(*)::integer AS lineas,
   count(DISTINCT COALESCE(NULLIF(denominacion_social, ''), NULLIF(cliente, '')))::integer AS clientes,
   count(DISTINCT NULLIF(producto, ''))::integer AS productos,
@@ -29,5 +40,7 @@ SELECT
   END AS precio_medio,
   max(created_at) AS refreshed_at
 FROM public.precios
-WHERE ano IS NOT NULL
-GROUP BY ano, mes;
+JOIN monthly_keys
+  ON public.precios.ano = monthly_keys.ano
+  AND public.precios.mes IS NOT DISTINCT FROM monthly_keys.mes
+GROUP BY monthly_keys.month_start, monthly_keys.ano, monthly_keys.mes;
