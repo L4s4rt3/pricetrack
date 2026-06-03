@@ -302,6 +302,62 @@ function buildCmrCarriersFromPresets(presets: LogisticsPreset[]): CmrCarrier[] {
   return Array.from(carriers.values()).sort((a, b) => b.occurrences - a.occurrences || a.name.localeCompare(b.name, "es"));
 }
 
+function buildCmrClientsFromTemplates(templates: LogisticsTemplateRow[]): CmrClient[] {
+  const clients = new Map<string, CmrClient>();
+  for (const template of templates) {
+    const parsed = splitTemplateName(template.name);
+    const name = cleanName(parsed.client);
+    if (!name) continue;
+
+    const clientKey = slug(name);
+    const current = clients.get(clientKey);
+    if (!current) {
+      clients.set(clientKey, {
+        client_key: clientKey,
+        name,
+        consignee: "",
+        transitario: "",
+        country: "",
+        default_goods: emptyPreset.default_goods,
+        is_edeka: normalize(name).includes("edeka"),
+        occurrences: 1,
+      });
+      continue;
+    }
+
+    current.occurrences += 1;
+    current.is_edeka = current.is_edeka || normalize(name).includes("edeka");
+  }
+
+  return Array.from(clients.values()).sort((a, b) => b.occurrences - a.occurrences || a.name.localeCompare(b.name, "es"));
+}
+
+function buildCmrCarriersFromTemplates(templates: LogisticsTemplateRow[]): CmrCarrier[] {
+  const carriers = new Map<string, CmrCarrier>();
+  for (const template of templates) {
+    const parsed = splitTemplateName(template.name);
+    const name = cleanName(parsed.carrier);
+    if (!name) continue;
+
+    const carrierKey = slug(name);
+    const current = carriers.get(carrierKey);
+    if (!current) {
+      carriers.set(carrierKey, {
+        carrier_key: carrierKey,
+        name,
+        details: name,
+        country: "",
+        occurrences: 1,
+      });
+      continue;
+    }
+
+    current.occurrences += 1;
+  }
+
+  return Array.from(carriers.values()).sort((a, b) => b.occurrences - a.occurrences || a.name.localeCompare(b.name, "es"));
+}
+
 function escapeXml(value?: string) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -837,6 +893,7 @@ export default function Logistica() {
       let loadedClients = (clientResult.data ?? []) as CmrClient[];
       let loadedCarriers = (carrierResult.data ?? []) as CmrCarrier[];
       if (loadedClients.length === 0 || loadedCarriers.length === 0) {
+        const fallbackErrors: string[] = [];
         const presetResult = await supabase
           .from("logistics_presets")
           .select("preset_key,name,sender,consignee,carrier,load_place,load_country,delivery_place,delivery_country,default_goods,default_instructions,source_files")
@@ -844,19 +901,39 @@ export default function Logistica() {
           .range(0, 4999);
 
         if (presetResult.error) {
-          throw new Error(`Supabase no devolvio datos de logistica: ${loadedClients.length} clientes y ${loadedCarriers.length} transportistas. Fichas antiguas: ${presetResult.error.message}`);
-        }
-
-        const fallbackPresets = (presetResult.data ?? []) as LogisticsPreset[];
-        if (fallbackPresets.length > 0) {
-          setPresets(fallbackPresets);
-          void writePersistentQuery(presetsQueryKey, fallbackPresets);
-          if (loadedClients.length === 0) loadedClients = buildCmrClientsFromPresets(fallbackPresets);
-          if (loadedCarriers.length === 0) loadedCarriers = buildCmrCarriersFromPresets(fallbackPresets);
+          fallbackErrors.push(`Fichas antiguas: ${presetResult.error.message}`);
+        } else {
+          const fallbackPresets = (presetResult.data ?? []) as LogisticsPreset[];
+          if (fallbackPresets.length > 0) {
+            setPresets(fallbackPresets);
+            void writePersistentQuery(presetsQueryKey, fallbackPresets);
+            if (loadedClients.length === 0) loadedClients = buildCmrClientsFromPresets(fallbackPresets);
+            if (loadedCarriers.length === 0) loadedCarriers = buildCmrCarriersFromPresets(fallbackPresets);
+          }
         }
 
         if (loadedClients.length === 0 || loadedCarriers.length === 0) {
-          throw new Error(`Supabase no devolvio datos de logistica: ${loadedClients.length} clientes y ${loadedCarriers.length} transportistas.`);
+          const templateResult = await supabase
+            .from("logistics_templates")
+            .select("kind,name,original_path,storage_path")
+            .order("name", { ascending: true })
+            .range(0, 4999);
+
+          if (templateResult.error) {
+            fallbackErrors.push(`Plantillas: ${templateResult.error.message}`);
+          } else {
+            const fallbackTemplates = (templateResult.data ?? []) as LogisticsTemplateRow[];
+            if (fallbackTemplates.length > 0) {
+              setTemplates(fallbackTemplates);
+              void writePersistentQuery(templatesQueryKey, fallbackTemplates);
+              if (loadedClients.length === 0) loadedClients = buildCmrClientsFromTemplates(fallbackTemplates);
+              if (loadedCarriers.length === 0) loadedCarriers = buildCmrCarriersFromTemplates(fallbackTemplates);
+            }
+          }
+        }
+
+        if (loadedClients.length === 0 || loadedCarriers.length === 0) {
+          throw new Error(`Supabase no devolvio datos de logistica: ${loadedClients.length} clientes y ${loadedCarriers.length} transportistas.${fallbackErrors.length ? ` ${fallbackErrors.join(" | ")}` : ""}`);
         }
       }
       setClients(loadedClients);
