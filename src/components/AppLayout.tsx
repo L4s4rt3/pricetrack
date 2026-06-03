@@ -56,7 +56,7 @@ export default function AppLayout() {
   };
 
   return (
-    <SidebarProvider className="app-frame">
+    <SidebarProvider className="app-frame !bg-transparent">
       <Sidebar collapsible="icon" className="price-sidebar">
         <SidebarHeader className="p-3">
           <SidebarMenu>
