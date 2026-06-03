@@ -53,6 +53,7 @@ export default defineConfig({
         manualChunks: {
           react: ["react", "react-dom", "react-router-dom"],
           charts: ["recharts"],
+          pdf: ["pdf-lib"],
           query: ["@tanstack/react-query"],
           supabase: ["@supabase/supabase-js"],
           ui: [

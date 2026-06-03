@@ -14,7 +14,6 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { PDFDocument, StandardFonts } from "pdf-lib";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -411,6 +410,7 @@ function buildGoodsLine(trip: TripFields) {
 }
 
 async function generateExactCmrPdf(preset: LogisticsPreset, trip: TripFields) {
+  const { PDFDocument, StandardFonts } = await import("pdf-lib");
   const templateBytes = await fetch(CMR_TEMPLATE_PATH).then((response) => {
     if (!response.ok) throw new Error("No se pudo cargar la plantilla CMR vacia.");
     return response.arrayBuffer();

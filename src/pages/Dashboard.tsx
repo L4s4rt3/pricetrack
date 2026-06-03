@@ -11,7 +11,7 @@ import { usePrecios } from "@/hooks/usePrecios";
 import { campaignLabel, CAMPAIGN_MONTHS, formatEur, formatKg, formatNum } from "@/lib/format";
 import { BAR_STYLE, C, CHART_PANEL_CLASS, GRID, MARGIN, XAXIS, YAXIS, barFill, GlassTooltip } from "@/lib/chartTheme";
 import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
-import { SaleFilterPanel, campaignRows, filterSales, groupRows, productPriceRows, productWeightedPrice, summaryStats, useEnrichedPrecios, useSaleFilterState } from "./pageHelpers";
+import { SaleFilterPanel, filterSales, groupRows, productPriceRows, productWeightedPrice, summaryStats, useEnrichedPrecios, useSaleFilterState } from "./pageHelpers";
 
 export default function Dashboard() {
   const { data, isLoading, isFetching } = usePrecios();
@@ -20,21 +20,42 @@ export default function Dashboard() {
   const deferredFilters = useDeferredValue(filters);
   const [selectedCampaign, setSelectedCampaign] = useState("");
   const filtered = useMemo(() => filterSales(rows, deferredFilters), [rows, deferredFilters]);
-  const campaigns = useMemo(() => Array.from(new Set(filtered.map((row) => row.campaign))).sort((a, b) => b - a), [filtered]);
+  const rowsByCampaign = useMemo(() => {
+    const map = new Map<number, typeof filtered>();
+    for (const row of filtered) {
+      const campaignRows = map.get(row.campaign);
+      if (campaignRows) campaignRows.push(row);
+      else map.set(row.campaign, [row]);
+    }
+    return map;
+  }, [filtered]);
+  const campaigns = useMemo(() => Array.from(rowsByCampaign.keys()).sort((a, b) => b - a), [rowsByCampaign]);
   const currentCampaign = Number(selectedCampaign || campaigns[0] || new Date().getFullYear());
-  const currentRows = useMemo(() => campaignRows(filtered, currentCampaign), [filtered, currentCampaign]);
+  const currentRows = rowsByCampaign.get(currentCampaign) ?? [];
   const currentProductRows = useMemo(() => productPriceRows(currentRows), [currentRows]);
-  const stats = summaryStats(currentRows);
+  const stats = useMemo(() => summaryStats(currentRows), [currentRows]);
 
-  const annualData = [...campaigns].reverse().map((campaign) => ({
-    label: campaignLabel(campaign),
-    price: Number(productWeightedPrice(campaignRows(filtered, campaign)).toFixed(3)),
-  }));
-  const monthlyData = CAMPAIGN_MONTHS.map((label, index) => {
-    const month = index < 3 ? index + 10 : index - 2;
-    return { label, price: Number(productWeightedPrice(currentRows.filter((row) => row.month === month)).toFixed(3)) };
-  });
-  const varietyData = groupRows(currentProductRows, (row) => row.cls.variety).slice(0, 8);
+  const annualData = useMemo(
+    () => [...campaigns].reverse().map((campaign) => ({
+      label: campaignLabel(campaign),
+      price: Number(productWeightedPrice(rowsByCampaign.get(campaign) ?? []).toFixed(3)),
+    })),
+    [campaigns, rowsByCampaign],
+  );
+  const monthlyData = useMemo(() => {
+    const rowsByMonth = new Map<number, typeof currentRows>();
+    for (const row of currentRows) {
+      if (!row.month) continue;
+      const monthRows = rowsByMonth.get(row.month);
+      if (monthRows) monthRows.push(row);
+      else rowsByMonth.set(row.month, [row]);
+    }
+    return CAMPAIGN_MONTHS.map((label, index) => {
+      const month = index < 3 ? index + 10 : index - 2;
+      return { label, price: Number(productWeightedPrice(rowsByMonth.get(month) ?? []).toFixed(3)) };
+    });
+  }, [currentRows]);
+  const varietyData = useMemo(() => groupRows(currentProductRows, (row) => row.cls.variety).slice(0, 8), [currentProductRows]);
   const headerSubtitle = isFetching
     ? `${formatNum(rows.length)} lineas visibles - cargando historico en segundo plano`
     : `${formatNum(rows.length)} lineas - desde campana ${MIN_CAMPAIGN_LABEL}`;

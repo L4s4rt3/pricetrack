@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { CONFECCION_SELECT, MIN_CONFECCION_DATE } from "@/lib/campaigns";
 import { LONG_LIVED_QUERY_OPTIONS, readPersistentQuery, writePersistentQuery } from "@/lib/persistentQueryCache";
@@ -7,6 +8,9 @@ import type { ConfeccionRow } from "@/lib/types";
 const PAGE_SIZE = 1000;
 const PAGE_CONCURRENCY = 3;
 export const confeccionQueryKey = ["confeccion", MIN_CONFECCION_DATE] as const;
+
+let fullDatasetReady = false;
+let historyLoadPromise: Promise<void> | null = null;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function normalizeRow(row: Record<string, any>): ConfeccionRow {
@@ -41,10 +45,7 @@ function normalizeRow(row: Record<string, any>): ConfeccionRow {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-export async function fetchConfeccion() {
-  const cached = await readPersistentQuery<ConfeccionRow[]>(confeccionQueryKey);
-  if (cached) return cached.data;
-
+async function fetchConfeccionRows() {
   const firstPage = await supabase
     .from("ventas_confeccion_detalle")
     .select(CONFECCION_SELECT, { count: "exact" })
@@ -81,14 +82,59 @@ export async function fetchConfeccion() {
   }
 
   const normalized = rows.map(normalizeRow);
-  void writePersistentQuery(confeccionQueryKey, normalized);
   return normalized;
 }
 
+async function fetchConfeccionFirstPage() {
+  const { data, error } = await supabase
+    .from("ventas_confeccion_detalle")
+    .select(CONFECCION_SELECT)
+    .gte("fecha_confeccion", MIN_CONFECCION_DATE)
+    .order("fecha_confeccion", { ascending: false })
+    .order("id", { ascending: false })
+    .range(0, PAGE_SIZE - 1);
+
+  if (error) throw error;
+  return ((data ?? []) as Record<string, any>[]).map(normalizeRow);
+}
+
+export async function fetchConfeccion() {
+  const cached = await readPersistentQuery<ConfeccionRow[]>(confeccionQueryKey);
+  if (cached) {
+    fullDatasetReady = true;
+    return cached.data;
+  }
+
+  return fetchConfeccionFirstPage();
+}
+
+async function hydrateRemainingConfeccion(queryClient: QueryClient) {
+  if (fullDatasetReady || historyLoadPromise) return historyLoadPromise;
+
+  historyLoadPromise = (async () => {
+    const rows = await fetchConfeccionRows();
+    fullDatasetReady = true;
+    queryClient.setQueryData(confeccionQueryKey, rows);
+    void writePersistentQuery(confeccionQueryKey, rows);
+  })().finally(() => {
+    historyLoadPromise = null;
+  });
+
+  return historyLoadPromise;
+}
+
 export function useConfeccion() {
-  return useQuery({
+  const queryClient = useQueryClient();
+  const query = useQuery({
     queryKey: confeccionQueryKey,
     queryFn: fetchConfeccion,
     ...LONG_LIVED_QUERY_OPTIONS,
   });
+
+  useEffect(() => {
+    if (!query.data?.length || fullDatasetReady) return;
+    void hydrateRemainingConfeccion(queryClient);
+  }, [query.data?.length, queryClient]);
+
+  return query;
 }
