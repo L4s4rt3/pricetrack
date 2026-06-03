@@ -9,24 +9,18 @@ function navigationSource() {
   return readFileSync(navigationUrl, "utf8");
 }
 
-function routeBlock(source, route) {
-  const escaped = route.replace("/", "\\/");
-  const pattern = new RegExp(`\\n  \\{[\\s\\S]*?to:\\s*"${escaped}"[\\s\\S]*?\\n  \\},`);
-  return source.match(pattern)?.[0] ?? "";
-}
-
-test("navigation source defines compact areas with expected subpages", () => {
+test("navigation source defines six progressive-redesign areas", () => {
   const source = navigationSource();
 
   assert.match(source, /export const navigationSections/);
-  assert.match(routeBlock(source, "/comercial"), /children:/);
-  assert.match(routeBlock(source, "/comercial"), /to:\s*"\/ventas"/);
-  assert.match(routeBlock(source, "/comercial"), /to:\s*"\/productos"/);
-  assert.match(routeBlock(source, "/comercial"), /to:\s*"\/clientes"/);
-  assert.match(routeBlock(source, "/analisis"), /children:/);
-  assert.match(routeBlock(source, "/analisis"), /to:\s*"\/tendencias"/);
-  assert.match(routeBlock(source, "/analisis"), /to:\s*"\/comparar"/);
-  assert.match(routeBlock(source, "/analisis"), /to:\s*"\/predicciones"/);
+  assert.match(source, /label:\s*"Dashboard"/);
+  assert.match(source, /to:\s*"\/logistica"/);
+  assert.match(source, /to:\s*"\/busqueda"/);
+  assert.match(source, /to:\s*"\/clientes"/);
+  assert.match(source, /to:\s*"\/comparativas"/);
+  assert.match(source, /to:\s*"\/datos"/);
+  assert.doesNotMatch(source, /label:\s*"Comercial"/);
+  assert.doesNotMatch(source, /label:\s*"Analisis"/);
 });
 
 test("navigation source exposes helpers used by layout, topbar and command palette", () => {
@@ -35,4 +29,14 @@ test("navigation source exposes helpers used by layout, topbar and command palet
   assert.match(source, /export function flattenNavigationItems/);
   assert.match(source, /export function findNavigationTrail/);
   assert.match(source, /export function isNavigationRouteActive/);
+});
+
+test("app keeps legacy routes as redirects during transition", () => {
+  const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+
+  assert.match(app, /path="ventas"[\s\S]*to="\/busqueda"/);
+  assert.match(app, /path="productos"[\s\S]*to="\/busqueda"/);
+  assert.match(app, /path="tendencias"[\s\S]*to="\/comparativas"/);
+  assert.match(app, /path="comparar"[\s\S]*to="\/comparativas"/);
+  assert.match(app, /path="predicciones"[\s\S]*to="\/comparativas"/);
 });

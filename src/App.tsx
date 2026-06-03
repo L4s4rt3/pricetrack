@@ -7,15 +7,10 @@ import { pageLoaders } from "@/lib/pagePreloads";
 import { lazyWithPreload } from "@/lib/routePreload";
 
 const Dashboard = lazyWithPreload(pageLoaders["/"]);
-const Comercial = lazyWithPreload(pageLoaders["/comercial"]);
 const Logistica = lazyWithPreload(pageLoaders["/logistica"]);
-const Analisis = lazyWithPreload(pageLoaders["/analisis"]);
-const Ventas = lazyWithPreload(pageLoaders["/ventas"]);
-const Productos = lazyWithPreload(pageLoaders["/productos"]);
+const Busqueda = lazyWithPreload(pageLoaders["/busqueda"]);
 const Clientes = lazyWithPreload(pageLoaders["/clientes"]);
-const Tendencias = lazyWithPreload(pageLoaders["/tendencias"]);
-const Comparar = lazyWithPreload(pageLoaders["/comparar"]);
-const Predicciones = lazyWithPreload(pageLoaders["/predicciones"]);
+const Comparativas = lazyWithPreload(pageLoaders["/comparativas"]);
 const Datos = lazyWithPreload(pageLoaders["/datos"]);
 const NotFound = lazyWithPreload(pageLoaders["*"]);
 
@@ -46,16 +41,18 @@ export default function App() {
         <Routes location={location}>
           <Route element={<AppLayout />}>
             <Route index element={<div className="route-page" key="dashboard"><Dashboard /></div>} />
-            <Route path="comercial" element={<div className="route-page" key="comercial"><Comercial /></div>} />
             <Route path="logistica" element={<div className="route-page" key="logistica"><Logistica /></div>} />
-            <Route path="analisis" element={<div className="route-page" key="analisis"><Analisis /></div>} />
-            <Route path="ventas" element={<div className="route-page" key="ventas"><Ventas /></div>} />
-            <Route path="productos" element={<div className="route-page" key="productos"><Productos /></div>} />
+            <Route path="busqueda" element={<div className="route-page" key="busqueda"><Busqueda /></div>} />
             <Route path="clientes" element={<div className="route-page" key="clientes"><Clientes /></div>} />
-            <Route path="confeccion" element={<Navigate to="/comercial" replace />} />
-            <Route path="tendencias" element={<div className="route-page" key="tendencias"><Tendencias /></div>} />
-            <Route path="comparar" element={<div className="route-page" key="comparar"><Comparar /></div>} />
-            <Route path="predicciones" element={<div className="route-page" key="predicciones"><Predicciones /></div>} />
+            <Route path="comparativas" element={<div className="route-page" key="comparativas"><Comparativas /></div>} />
+            <Route path="comercial" element={<Navigate to="/busqueda" replace />} />
+            <Route path="ventas" element={<Navigate to="/busqueda" replace />} />
+            <Route path="productos" element={<Navigate to="/busqueda" replace />} />
+            <Route path="analisis" element={<Navigate to="/comparativas" replace />} />
+            <Route path="tendencias" element={<Navigate to="/comparativas" replace />} />
+            <Route path="comparar" element={<Navigate to="/comparativas" replace />} />
+            <Route path="predicciones" element={<Navigate to="/comparativas" replace />} />
+            <Route path="confeccion" element={<Navigate to="/clientes" replace />} />
             <Route path="datos" element={<div className="route-page" key="datos"><Datos /></div>} />
             <Route path="*" element={<div className="route-page" key="not-found"><NotFound /></div>} />
           </Route>

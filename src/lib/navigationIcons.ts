@@ -1,29 +1,18 @@
 import {
-  BarChart3,
   Database,
-  FileText,
-  GitCompareArrows,
+  FileSearch,
   LayoutDashboard,
-  LineChart,
-  Package,
-  ShoppingBag,
-  TrendingUp,
-  Truck,
+  Route,
+  Scale,
   Users,
-  type LucideIcon,
 } from "lucide-react";
-import type { NavigationIconId } from "@/lib/navigation";
+import type { NavigationIconId } from "./navigation";
 
-export const navigationIcons: Record<NavigationIconId, LucideIcon> = {
+export const navigationIcons: Record<NavigationIconId, typeof LayoutDashboard> = {
   dashboard: LayoutDashboard,
-  commercial: ShoppingBag,
-  logistics: Truck,
-  analytics: BarChart3,
-  data: Database,
-  sales: FileText,
-  products: Package,
+  logistics: Route,
+  search: FileSearch,
   clients: Users,
-  trends: TrendingUp,
-  compare: GitCompareArrows,
-  predictions: LineChart,
+  compare: Scale,
+  data: Database,
 };

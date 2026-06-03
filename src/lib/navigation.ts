@@ -1,15 +1,10 @@
 export type NavigationIconId =
   | "dashboard"
-  | "commercial"
   | "logistics"
-  | "analytics"
-  | "data"
-  | "sales"
-  | "products"
+  | "search"
   | "clients"
-  | "trends"
   | "compare"
-  | "predictions";
+  | "data";
 
 export type NavigationItem = {
   to: string;
@@ -23,41 +18,37 @@ export const navigationSections = [
   {
     to: "/",
     label: "Dashboard",
-    subtitle: "Vision general del negocio",
+    subtitle: "Ultimos 6 meses y senales clave",
     icon: "dashboard",
-  },
-  {
-    to: "/comercial",
-    label: "Comercial",
-    subtitle: "Ventas, productos, clientes y trazabilidad",
-    icon: "commercial",
-    children: [
-      { to: "/ventas", label: "Ventas", subtitle: "Consulta detallada de ventas, facturas y clientes", icon: "sales" },
-      { to: "/productos", label: "Productos", subtitle: "Navega por tipo de factura, variedad, calibre y formato", icon: "products" },
-      { to: "/clientes", label: "Clientes", subtitle: "Analisis de la cartera de clientes y su historial", icon: "clients" },
-    ],
   },
   {
     to: "/logistica",
     label: "Logistica",
-    subtitle: "Expediciones, transporte y control operativo",
+    subtitle: "CMR, hojas de ruta, clientes y transportistas",
     icon: "logistics",
   },
   {
-    to: "/analisis",
-    label: "Analisis",
-    subtitle: "Tendencias, comparativas y predicciones",
-    icon: "analytics",
-    children: [
-      { to: "/tendencias", label: "Tendencias", subtitle: "Patrones, maximos, minimos y variaciones en el tiempo", icon: "trends" },
-      { to: "/comparar", label: "Comparar", subtitle: "Selecciona campanas para comparar precios directamente", icon: "compare" },
-      { to: "/predicciones", label: "Predicciones", subtitle: "Proyeccion estimada para los proximos 12 meses", icon: "predictions" },
-    ],
+    to: "/busqueda",
+    label: "Busqueda",
+    subtitle: "Consulta por texto o filtros sin cargar historico",
+    icon: "search",
+  },
+  {
+    to: "/clientes",
+    label: "Clientes",
+    subtitle: "Base comercial 360 y evolucion por cliente",
+    icon: "clients",
+  },
+  {
+    to: "/comparativas",
+    label: "Comparativas",
+    subtitle: "Campanas, meses, productos y clientes",
+    icon: "compare",
   },
   {
     to: "/datos",
     label: "Datos",
-    subtitle: "Consulta, edita y exporta todos los registros de precios",
+    subtitle: "Importar, modificar, exportar y borrar",
     icon: "data",
   },
 ] satisfies NavigationItem[];
