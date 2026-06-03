@@ -2085,6 +2085,17 @@ body {
   transform-origin: 50% 0;
 }
 
+/* Final dark silver chart foundation: Recharts tooltips can escape panel edges. */
+.chart-panel {
+  overflow: visible;
+  contain: layout style;
+}
+
+.chart-panel .recharts-wrapper,
+.chart-panel .recharts-surface {
+  overflow: visible;
+}
+
 @media (max-width: 768px) {
   :root {
     --glass-blur: blur(14px) saturate(1.35);

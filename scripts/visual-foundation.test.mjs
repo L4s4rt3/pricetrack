@@ -91,11 +91,22 @@ test("final dark semantic tokens stay subdued in the silver foundation", () => {
   assert.ok(warning.saturation <= 55, "--warning amber should be restrained");
 });
 
+test("final chart panel allows tooltip overflow", () => {
+  const chartPanel = finalCssBlock(".chart-panel");
+
+  assert.match(chartPanel, /overflow:\s*visible/);
+  assert.doesNotMatch(chartPanel, /contain:\s*[^;]*paint/);
+});
+
 test("chart theme uses silver and ice accents instead of the old bright palette", () => {
   assert.doesNotMatch(chartTheme, /#(?:0A84FF|64D2FF|FFD60A|FF9F0A|BF5AF2)/i);
   assert.match(chartTheme, /silver/i);
   assert.match(chartTheme, /ice/i);
-  assert.match(chartTheme, /exportacion:\s*"#E[5-9]/);
+
+  const primary = hexToHsl(chartHex("primary"));
+  const exportacion = hexToHsl(chartHex("exportacion"));
+  assert.ok(primary.lightness <= 68, "primary chart marks should not be pale background silver");
+  assert.ok(exportacion.lightness <= 68, "exportacion chart marks should not be pale background silver");
 
   const vividChartKeys = ["mercado", "noExportacion", "noComercial", "mujeres", "otro"];
   for (const key of vividChartKeys) {

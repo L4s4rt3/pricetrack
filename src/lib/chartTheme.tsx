@@ -1,5 +1,5 @@
 export const C = {
-  primary: "#E8EEF2",
+  primary: "#6F7884",
   primaryLight: "#F8FBFF",
   success: "#AFC2B9",
   warning: "#B6AA86",
@@ -15,7 +15,7 @@ export const C = {
 };
 
 export const CHART_COLORS = {
-  exportacion: "#E8EEF2",
+  exportacion: "#6F7884",
   mercado: "#DCE8ED",
   noExportacion: "#B98D8B",
   noComercial: "#B6AA86",
