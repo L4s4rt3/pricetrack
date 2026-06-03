@@ -9,6 +9,45 @@ const dashboard = readFileSync(new URL("../src/pages/Dashboard.tsx", import.meta
 const dashboardSummaryHook = readFileSync(new URL("../src/hooks/useDashboardSummary.ts", import.meta.url), "utf8");
 const dashboardMigration = readFileSync(new URL("../supabase/migrations/20260603_dashboard_search_phase1.sql", import.meta.url), "utf8");
 
+function findMatchingParen(source, openIndex) {
+  let depth = 0;
+
+  for (let index = openIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "(") depth += 1;
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+
+  throw new Error("No matching closing parenthesis found");
+}
+
+function extractMonthlyKeysCte(sql) {
+  const cteStart = sql.search(/WITH\s+monthly_keys\s+AS\s*\(/i);
+  assert.notEqual(cteStart, -1, "monthly_keys CTE should exist");
+
+  const openParen = sql.indexOf("(", cteStart);
+  const closeParen = findMatchingParen(sql, openParen);
+
+  return {
+    body: sql.slice(openParen + 1, closeParen),
+    end: closeParen + 1,
+    start: cteStart,
+  };
+}
+
+function extractChartCard(source, title) {
+  const titleIndex = source.indexOf(`<ChartCard title="${title}">`);
+  assert.notEqual(titleIndex, -1, `${title} ChartCard should exist`);
+
+  const closeIndex = source.indexOf("</ChartCard>", titleIndex);
+  assert.notEqual(closeIndex, -1, `${title} ChartCard should close`);
+
+  return source.slice(titleIndex, closeIndex);
+}
+
 test("app startup does not preload heavy routes or historical datasets", () => {
   assert.match(pagePreloads, /export const criticalPagePreloaders/);
   assert.doesNotMatch(app, /scheduleRoutePreload\(pagePreloaders\)/);
@@ -33,17 +72,34 @@ test("dashboard aggregate summary stays in precios invalidation scope", () => {
 });
 
 test("dashboard aggregate view limits to latest valid months before aggregation", () => {
-  assert.match(dashboardMigration, /WITH\s+monthly_keys\s+AS\s*\(/i);
-  assert.match(dashboardMigration, /ORDER BY\s+month_start\s+DESC\s+LIMIT\s+6/i);
-  assert.match(dashboardMigration, /mes\s+IS\s+NULL\s+OR\s+mes\s+BETWEEN\s+1\s+AND\s+12/i);
-  assert.match(dashboardMigration, /JOIN\s+monthly_keys/i);
+  const monthlyKeys = extractMonthlyKeysCte(dashboardMigration);
+  const finalSelectStart = dashboardMigration.search(/SELECT\s+monthly_keys\.month_start/i);
+  const finalBody = dashboardMigration.slice(finalSelectStart);
+  const finalFromJoinIndex = dashboardMigration.search(/FROM\s+public\.precios\s+JOIN\s+monthly_keys/i);
+  const groupByIndex = dashboardMigration.search(/GROUP\s+BY\s+monthly_keys\.month_start/i);
+
+  assert.match(monthlyKeys.body, /ORDER\s+BY\s+month_start\s+DESC\s+LIMIT\s+6/i);
+  assert.match(monthlyKeys.body, /mes\s+IS\s+NULL\s+OR\s+mes\s+BETWEEN\s+1\s+AND\s+12/i);
+  assert.doesNotMatch(monthlyKeys.body, /\b(count|sum|avg)\s*\(/i);
+  assert.ok(finalSelectStart > monthlyKeys.end, "final SELECT should run after monthly_keys CTE");
+  assert.match(finalBody, /\bcount\s*\(/i);
+  assert.match(finalBody, /\bsum\s*\(/i);
+  assert.match(finalBody, /\bavg\s*\(/i);
+  assert.ok(finalFromJoinIndex > finalSelectStart, "final aggregation should read precios joined to monthly_keys");
+  assert.ok(groupByIndex > finalFromJoinIndex, "GROUP BY should happen after joining monthly_keys");
 });
 
 test("dashboard exposes aggregate load errors and keeps units split across charts", () => {
+  const facturacionChart = extractChartCard(dashboard, "Facturacion por mes");
+  const kilosChart = extractChartCard(dashboard, "Kilos por mes");
+  const precioChart = extractChartCard(dashboard, "Precio medio por mes");
+
   assert.match(dashboard, /isError/);
   assert.match(dashboard, /refetch/);
   assert.match(dashboard, /Reintentar/);
-  assert.doesNotMatch(dashboard, /Facturacion y kilos/);
-  assert.match(dashboard, /Facturacion por mes/);
-  assert.match(dashboard, /Kilos por mes/);
+  assert.match(facturacionChart, /dataKey="facturacion"/);
+  assert.doesNotMatch(facturacionChart, /dataKey="kilos"/);
+  assert.match(kilosChart, /dataKey="kilos"/);
+  assert.doesNotMatch(kilosChart, /dataKey="facturacion"/);
+  assert.match(precioChart, /dataKey="precio"/);
 });
