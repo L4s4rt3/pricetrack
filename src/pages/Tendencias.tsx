@@ -11,7 +11,7 @@ import { BAR_STYLE, C, CHART_PANEL_CLASS, GRID, MARGIN, XAXIS, YAXIS, barFill, G
 import { SelectFilter, campaignRows, productPriceRows, productWeightedPrice, selectOptions, useEnrichedPrecios } from "./pageHelpers";
 
 export default function Tendencias() {
-  const { data } = usePrecios();
+  const { data, isHydratingHistory } = usePrecios({ hydrateHistory: true });
   const rows = useEnrichedPrecios(data);
   const priceRows = useMemo(() => productPriceRows(rows), [rows]);
   const [product, setProduct] = useState("");
@@ -44,7 +44,7 @@ export default function Tendencias() {
 
   return (
     <div className="page-shell">
-      <PageHeader title="Tendencias" subtitle="Evolucion historica del precio/kg de producto" />
+      <PageHeader title="Tendencias" subtitle={isHydratingHistory ? "Cargando historico bajo demanda" : "Evolucion historica del precio/kg de producto"} />
       <div className="section-toolbar">
         <SelectFilter label="Producto" value={product} options={products} onChange={setProduct} />
         <SelectFilter label="Desde" value={fromCampaign} options={allCampaigns.map(String)} format={(v) => campaignLabel(Number(v))} onChange={setFromCampaign} />

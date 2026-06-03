@@ -13,7 +13,7 @@ import { predictPrices } from "@/lib/predictions";
 import { SelectFilter, productPriceRows, productWeightedPrice, selectOptions, useEnrichedPrecios } from "./pageHelpers";
 
 export default function Predicciones() {
-  const { data, isLoading } = usePrecios();
+  const { data, isLoading, isHydratingHistory } = usePrecios({ hydrateHistory: true });
   const rows = useEnrichedPrecios(data);
   const priceRows = useMemo(() => productPriceRows(rows), [rows]);
   const [product, setProduct] = useState("Naranja");
@@ -57,7 +57,7 @@ export default function Predicciones() {
 
   return (
     <div className="page-shell">
-      <PageHeader title="Predicciones" subtitle="Proyeccion estadistica del precio/kg de producto" />
+      <PageHeader title="Predicciones" subtitle={isHydratingHistory ? "Cargando historico bajo demanda" : "Proyeccion estadistica del precio/kg de producto"} />
       <div className="section-toolbar"><SelectFilter label="Producto" value={product} options={products} onChange={setProduct} /></div>
       <section className="metric-strip">
         <KPICard label="Precio producto estimado" value={`${formatEur(next)}/kg`} icon={TrendingUp} />

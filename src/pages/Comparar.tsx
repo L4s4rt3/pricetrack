@@ -14,7 +14,7 @@ import { SaleFilterPanel, campaignRows, filterSales, productPriceRows, productWe
 const colors = [C.primary, C.orange, C.info, C.success, C.purple];
 
 export default function Comparar() {
-  const { data, isLoading } = usePrecios();
+  const { data, isLoading, isHydratingHistory } = usePrecios({ hydrateHistory: true });
   const rows = useEnrichedPrecios(data);
   const [filters, setFilters] = useSaleFilterState();
   const deferredFilters = useDeferredValue(filters);
@@ -79,7 +79,7 @@ export default function Comparar() {
 
   return (
     <div className="page-shell">
-      <PageHeader title="Comparar" subtitle="Comparativa mensual con filtros de cliente, articulo y confeccion" />
+      <PageHeader title="Comparar" subtitle={isHydratingHistory ? "Cargando historico bajo demanda" : "Comparativa mensual con filtros de cliente, articulo y confeccion"} />
       <SaleFilterPanel rows={rows} filters={filters} onChange={setFilters} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {campaigns.slice(0, 12).map((campaign) => {

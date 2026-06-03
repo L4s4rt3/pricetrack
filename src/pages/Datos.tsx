@@ -11,9 +11,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePrecios } from "@/hooks/usePrecios";
-import { preciosQueryKey } from "@/hooks/usePrecios";
+import { preciosHistoryQueryKey, preciosQueryKey, resetPreciosRuntimeState } from "@/hooks/usePrecios";
 import { supabase } from "@/integrations/supabase/client";
-import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
 import { campaignLabel, formatEur, formatKg, formatNum, MONTHS } from "@/lib/format";
 import { removePersistentQuery } from "@/lib/persistentQueryCache";
 import { SaleFilterPanel, filterSales, summaryStats, useEnrichedPrecios, usePagination, useSaleFilterState, PaginationControls } from "./pageHelpers";
@@ -73,7 +72,8 @@ export default function Datos() {
       if (!records.length) throw new Error("CSV sin filas validas");
       const { error } = await supabase.from("precios").insert(records);
       if (error) throw error;
-      await removePersistentQuery(preciosQueryKey);
+      resetPreciosRuntimeState();
+      await Promise.all([removePersistentQuery(preciosQueryKey), removePersistentQuery(preciosHistoryQueryKey)]);
       await queryClient.invalidateQueries({ queryKey: ["precios"] });
       toast.success(`${records.length} filas importadas`);
       setImportOpen(false);
@@ -90,7 +90,8 @@ export default function Datos() {
       toast.error("No se pudieron eliminar los datos");
       return;
     }
-    await removePersistentQuery(preciosQueryKey);
+    resetPreciosRuntimeState();
+    await Promise.all([removePersistentQuery(preciosQueryKey), removePersistentQuery(preciosHistoryQueryKey)]);
     await queryClient.invalidateQueries({ queryKey: ["precios"] });
     toast.success("Datos eliminados");
   };
@@ -98,7 +99,7 @@ export default function Datos() {
   if (isLoading) {
     return (
       <div className="page-shell">
-        <PageHeader title="Datos" subtitle={`Preparando tabla completa desde campana ${MIN_CAMPAIGN_LABEL}`} />
+        <PageHeader title="Datos" subtitle="Preparando tabla operativa reciente" />
         <Skeleton className="h-28 rounded-lg" />
         <Skeleton className="h-[380px] rounded-lg" />
       </div>
@@ -107,7 +108,7 @@ export default function Datos() {
 
   return (
     <div className="page-shell">
-      <PageHeader title="Datos" subtitle={`Tabla completa desde campana ${MIN_CAMPAIGN_LABEL}`}>
+      <PageHeader title="Datos" subtitle="Tabla operativa de la ultima campana disponible">
         <Dialog open={importOpen} onOpenChange={setImportOpen}>
           <DialogTrigger asChild>
             <Button variant="outline" className="gap-2"><Upload className="h-4 w-4" /> Importar CSV</Button>

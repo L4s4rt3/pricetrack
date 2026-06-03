@@ -10,11 +10,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { usePrecios } from "@/hooks/usePrecios";
 import { campaignLabel, CAMPAIGN_MONTHS, formatEur, formatKg, formatNum } from "@/lib/format";
 import { BAR_STYLE, C, CHART_PANEL_CLASS, GRID, MARGIN, XAXIS, YAXIS, barFill, GlassTooltip } from "@/lib/chartTheme";
-import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
 import { SaleFilterPanel, filterSales, groupRows, productPriceRows, productWeightedPrice, summaryStats, useEnrichedPrecios, useSaleFilterState } from "./pageHelpers";
 
 export default function Dashboard() {
-  const { data, isLoading, isFetching } = usePrecios();
+  const { data, isLoading } = usePrecios();
   const rows = useEnrichedPrecios(data);
   const [filters, setFilters] = useSaleFilterState();
   const deferredFilters = useDeferredValue(filters);
@@ -56,14 +55,12 @@ export default function Dashboard() {
     });
   }, [currentRows]);
   const varietyData = useMemo(() => groupRows(currentProductRows, (row) => row.cls.variety).slice(0, 8), [currentProductRows]);
-  const headerSubtitle = isFetching
-    ? `${formatNum(rows.length)} lineas visibles - cargando historico en segundo plano`
-    : `${formatNum(rows.length)} lineas - desde campana ${MIN_CAMPAIGN_LABEL}`;
+  const headerSubtitle = `${formatNum(rows.length)} lineas operativas - ultima campana disponible`;
 
   if (isLoading) {
     return (
       <div className="page-shell">
-        <PageHeader title="Resumen" subtitle={`Preparando historico desde campana ${MIN_CAMPAIGN_LABEL}`} />
+        <PageHeader title="Resumen" subtitle="Preparando vista operativa reciente" />
         <div className="metric-strip">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-28 rounded-lg" />

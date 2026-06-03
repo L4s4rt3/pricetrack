@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { MIN_CAMPAIGN_START, PRECIOS_SELECT } from "@/lib/campaigns";
@@ -8,7 +8,8 @@ import type { PrecioRow } from "@/lib/types";
 
 const PAGE_SIZE = 1000;
 const PAGE_CONCURRENCY = 3;
-export const preciosQueryKey = ["precios", MIN_CAMPAIGN_START] as const;
+export const preciosQueryKey = ["precios", "latest-campaign", MIN_CAMPAIGN_START] as const;
+export const preciosHistoryQueryKey = ["precios", "full-history", MIN_CAMPAIGN_START] as const;
 
 let fullDatasetReady = false;
 let historyLoadPromise: Promise<void> | null = null;
@@ -125,18 +126,26 @@ async function fetchCampaignRows(campaign: number) {
 export async function fetchPrecios() {
   const cached = await readPersistentQuery<PrecioRow[]>(preciosQueryKey);
   if (cached) {
-    fullDatasetReady = true;
     return cached.data;
   }
 
   const latestCampaign = await detectLatestCampaign();
-  return fetchCampaignFirstPage(latestCampaign);
+  const rows = await fetchCampaignFirstPage(latestCampaign);
+  void writePersistentQuery(preciosQueryKey, sortRows(rows));
+  return rows;
 }
 
 async function hydrateOlderCampaigns(queryClient: QueryClient) {
   if (fullDatasetReady || historyLoadPromise) return historyLoadPromise;
 
   historyLoadPromise = (async () => {
+    const cached = await readPersistentQuery<PrecioRow[]>(preciosHistoryQueryKey);
+    if (cached) {
+      fullDatasetReady = true;
+      queryClient.setQueryData(preciosQueryKey, cached.data);
+      return;
+    }
+
     const latestCampaign = await detectLatestCampaign();
     const seen = new Set<number>();
     const merged: PrecioRow[] = [];
@@ -160,7 +169,7 @@ async function hydrateOlderCampaigns(queryClient: QueryClient) {
     }
 
     fullDatasetReady = true;
-    void writePersistentQuery(preciosQueryKey, sortRows(merged));
+    void writePersistentQuery(preciosHistoryQueryKey, sortRows(merged));
   })().finally(() => {
     historyLoadPromise = null;
   });
@@ -168,8 +177,14 @@ async function hydrateOlderCampaigns(queryClient: QueryClient) {
   return historyLoadPromise;
 }
 
-export function usePrecios() {
+export function resetPreciosRuntimeState() {
+  fullDatasetReady = false;
+  historyLoadPromise = null;
+}
+
+export function usePrecios({ hydrateHistory = false }: { hydrateHistory?: boolean } = {}) {
   const queryClient = useQueryClient();
+  const [isHydratingHistory, setIsHydratingHistory] = useState(false);
   const query = useQuery({
     queryKey: preciosQueryKey,
     queryFn: fetchPrecios,
@@ -177,9 +192,16 @@ export function usePrecios() {
   });
 
   useEffect(() => {
-    if (!query.data?.length || fullDatasetReady) return;
-    void hydrateOlderCampaigns(queryClient);
-  }, [query.data?.length, queryClient]);
+    if (!hydrateHistory || !query.data?.length || fullDatasetReady) return;
+    let cancelled = false;
+    setIsHydratingHistory(true);
+    void hydrateOlderCampaigns(queryClient).finally(() => {
+      if (!cancelled) setIsHydratingHistory(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateHistory, query.data?.length, queryClient]);
 
-  return query;
+  return { ...query, isHydratingHistory, isHistoryReady: fullDatasetReady };
 }

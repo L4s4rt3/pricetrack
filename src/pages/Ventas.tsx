@@ -8,9 +8,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { usePrecios } from "@/hooks/usePrecios";
-import { preciosQueryKey } from "@/hooks/usePrecios";
+import { preciosHistoryQueryKey, preciosQueryKey, resetPreciosRuntimeState } from "@/hooks/usePrecios";
 import { supabase } from "@/integrations/supabase/client";
-import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
 import { campaignLabel, formatEur, formatKg, formatNum, MONTHS } from "@/lib/format";
 import { removePersistentQuery } from "@/lib/persistentQueryCache";
 import { SaleFilterPanel, filterSales, summaryStats, useEnrichedPrecios, usePagination, useSaleFilterState, PaginationControls } from "./pageHelpers";
@@ -31,7 +30,8 @@ export default function Ventas() {
       toast.error("No se pudo eliminar la linea");
       return;
     }
-    await removePersistentQuery(preciosQueryKey);
+    resetPreciosRuntimeState();
+    await Promise.all([removePersistentQuery(preciosQueryKey), removePersistentQuery(preciosHistoryQueryKey)]);
     await queryClient.invalidateQueries({ queryKey: ["precios"] });
     toast.success("Linea eliminada");
   };
@@ -40,7 +40,7 @@ export default function Ventas() {
 
   return (
     <div className="page-shell">
-      <PageHeader title="Ventas" subtitle={`Lineas comerciales desde campana ${MIN_CAMPAIGN_LABEL}`} />
+      <PageHeader title="Ventas" subtitle="Lineas comerciales de la ultima campana disponible" />
       <section className="metric-strip">
         <KPICard label="Registros" value={formatNum(stats.lines)} icon={FileText} />
         <KPICard label="Precio producto" value={`${formatEur(stats.price)}/kg`} icon={Euro} />
