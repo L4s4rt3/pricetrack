@@ -1,20 +1,44 @@
-import { fetchAllRecords, addRecord as dbAddRecord, addRecords as dbAddRecords, deleteRecord as dbDeleteRecord, subscribeToChanges, normalizeRow } from './database.js'
+import { fetchRecentRecords, fetchRecordsPage, fetchFilterOptions, addRecord as dbAddRecord, addRecords as dbAddRecords, deleteRecord as dbDeleteRecord, subscribeToChanges, normalizeRow } from './database.js'
 
 let data = []
 let charts = {}
 let selectedYears = []
+let filterOptions = { years: [], products: [], categories: [] }
+let tableDefaultYearApplied = false
+let tableRenderTimer = null
+let tableState = { page: 0, pageSize: 100, total: 0, rows: [], requestId: 0, loading: false }
 
 const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
 const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const CHART_COLORS = ['#01696f','#006494','#437a22','#d19900','#da7101','#a12c7b','#964219','#5591c7']
+const RECENT_MONTHS = 3
 
 function getUnique(field) { return [...new Set(data.map(d => d[field]))].sort() }
 function getYears() { return getUnique('year').map(Number).sort() }
 function getProducts() { return getUnique('product') }
 function getCategories() { return getUnique('category') }
+function getFilterYears() { return filterOptions.years.length ? filterOptions.years : getYears() }
+function getFilterProducts() { return filterOptions.products.length ? filterOptions.products : getProducts() }
+function getFilterCategories() { return filterOptions.categories.length ? filterOptions.categories : getCategories() }
+function mergeFilterOptionsFromRows(rows) {
+  filterOptions = {
+    years: [...new Set([...filterOptions.years, ...rows.map(r => r.year)].filter(Boolean))].map(Number).sort((a, b) => a - b),
+    products: [...new Set([...filterOptions.products, ...rows.map(r => r.product)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')),
+    categories: [...new Set([...filterOptions.categories, ...rows.map(r => r.category)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es')),
+  }
+}
 function avg(arr) { return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0 }
 function fmt(n) { return (+n).toFixed(2) }
 function fmtPct(n) { return (n >= 0 ? '+' : '') + n.toFixed(1) + '%' }
+
+function fillSelect(el, placeholder, values, selectedValue) {
+  if (!el) return
+  const previous = selectedValue !== undefined ? String(selectedValue ?? '') : el.value
+  const normalized = values.map(v => String(v))
+  el.innerHTML = `<option value="">${placeholder}</option>` + values.map(v => `<option value="${v}">${v}</option>`).join('')
+  if (previous && normalized.includes(previous)) el.value = previous
+  else el.value = ''
+}
 
 function getChartColors() {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark'
@@ -47,7 +71,13 @@ function rerenderCurrentPage() {
 
 async function initApp() {
   try {
-    data = await fetchAllRecords()
+    const [recentRows, options] = await Promise.all([
+      fetchRecentRecords({ months: RECENT_MONTHS }),
+      fetchFilterOptions(),
+    ])
+    data = recentRows
+    filterOptions = options
+    mergeFilterOptionsFromRows(recentRows)
   } catch (e) {
     console.error('Error loading from Supabase:', e)
     showToast('⚠ Error al cargar datos de Supabase')
@@ -59,13 +89,17 @@ async function initApp() {
   subscribeToChanges((payload) => {
     const { event_type, new: newRow, old: oldRow } = payload
     if (event_type === 'INSERT' && newRow) {
-      data.push(normalizeRow(newRow))
+      const normalized = normalizeRow(newRow)
+      if (!data.some(d => d.id === normalized.id)) data.push(normalized)
+      mergeFilterOptionsFromRows([normalized])
       showToast(`📦 Nuevo registro: ${newRow.producto}`)
     } else if (event_type === 'DELETE' && oldRow) {
       data = data.filter(d => d.id !== oldRow.id)
     } else if (event_type === 'UPDATE' && newRow) {
       const idx = data.findIndex(d => d.id === newRow.id)
-      if (idx !== -1) data[idx] = normalizeRow(newRow)
+      const normalized = normalizeRow(newRow)
+      if (idx !== -1) data[idx] = normalized
+      mergeFilterOptionsFromRows([normalized])
     }
     rerenderCurrentPage()
   })
@@ -91,37 +125,52 @@ function populateAllSelects() {
   const years = getYears()
   const products = getProducts()
   const cats = getCategories()
+  const filterYears = getFilterYears()
+  const filterProducts = getFilterProducts()
+  const filterCats = getFilterCategories()
 
   const pd = document.getElementById('product-datalist')
-  if (pd) pd.innerHTML = products.map(p => `<option value="${p}">`).join('')
+  if (pd) pd.innerHTML = filterProducts.map(p => `<option value="${p}">`).join('')
   const cd = document.getElementById('cat-datalist')
-  if (cd) cd.innerHTML = cats.map(c => `<option value="${c}">`).join('')
+  if (cd) cd.innerHTML = filterCats.map(c => `<option value="${c}">`).join('')
 
   const dps = document.getElementById('dash-product-select')
-  if (dps) dps.innerHTML = products.map(p => `<option value="${p}">${p}</option>`).join('')
+  if (dps) {
+    const previous = dps.value
+    dps.innerHTML = products.map(p => `<option value="${p}">${p}</option>`).join('')
+    if (previous && products.includes(previous)) dps.value = previous
+  }
 
   const dys = document.getElementById('dash-year-select')
   if (dys) {
+    const previous = dys.value
     dys.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('')
-    if (years.length) dys.value = years[years.length-1]
+    if (previous && years.map(String).includes(previous)) dys.value = previous
+    else if (years.length) dys.value = years[years.length-1]
   }
 
   ;['trend-product','cmp-product','search-product'].forEach(id => {
     const el = document.getElementById(id)
-    if (el) el.innerHTML = `<option value="">Todos los productos</option>` + products.map(p => `<option value="${p}">${p}</option>`).join('')
+    if (id === 'search-product') fillSelect(el, 'Todos los productos', filterProducts)
+    else fillSelect(el, 'Todos los productos', products)
   })
   ;['trend-year-from','trend-year-to'].forEach(id => {
     const el = document.getElementById(id)
-    if (el) el.innerHTML = `<option value="">-</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
+    fillSelect(el, '-', years)
   })
 
   const tyf = document.getElementById('table-year-filter')
-  if (tyf) tyf.innerHTML = `<option value="">Todos los años</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
   const tcf = document.getElementById('table-cat-filter')
-  if (tcf) tcf.innerHTML = `<option value="">Todas las categorías</option>` + cats.map(c => `<option value="${c}">${c}</option>`).join('')
+
+  if (tyf) {
+    const defaultYear = !tableDefaultYearApplied && filterYears.length ? filterYears[filterYears.length - 1] : undefined
+    fillSelect(tyf, 'Todos los anos', filterYears, defaultYear)
+    if (defaultYear !== undefined) tableDefaultYearApplied = true
+  }
+  fillSelect(tcf, 'Todas las categorias', filterCats)
 
   const sy = document.getElementById('search-year')
-  if (sy) sy.innerHTML = `<option value="">Todos</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
+  fillSelect(sy, 'Todos', filterYears)
 }
 
 // =================== DASHBOARD ===================
@@ -145,13 +194,13 @@ function renderDashboard() {
   const maxRec = data.find(d => d.price === maxP)
   const minRec = data.find(d => d.price === minP)
 
-  document.getElementById('dashboard-subtitle').textContent = `Datos de ${years[0]} a ${latestYear} · ${data.length} registros`
+  document.getElementById('dashboard-subtitle').textContent = `Vista operativa: ultimos ${RECENT_MONTHS} meses disponibles · ${data.length} registros`
 
   const kpis = [
     { label: `Precio medio ${latestYear}`, value: `${fmt(avgLatest)} €`, delta: fmtPct(pctChange), up: pctChange > 0 },
-    { label: 'Total registros', value: data.length.toLocaleString('es'), delta: `${years.length} años`, flat: true },
-    { label: 'Precio máximo histórico', value: `${fmt(maxP)} €`, delta: `${maxRec?.product} (${maxRec?.year})`, flat: true },
-    { label: 'Precio mínimo histórico', value: `${fmt(minP)} €`, delta: `${minRec?.product} (${minRec?.year})`, flat: true },
+    { label: 'Total registros', value: data.length.toLocaleString('es'), delta: `${years.length} anos`, flat: true },
+    { label: 'Precio maximo del rango', value: `${fmt(maxP)} €`, delta: `${maxRec?.product} (${maxRec?.year})`, flat: true },
+    { label: 'Precio minimo del rango', value: `${fmt(minP)} €`, delta: `${minRec?.product} (${minRec?.year})`, flat: true },
   ]
 
   document.getElementById('kpi-grid').innerHTML = kpis.map(k => `
@@ -263,8 +312,8 @@ function renderHistoryFilters() {
   const cats = getCategories()
   const yearSel = document.getElementById('history-year')
   const catSel = document.getElementById('history-category')
-  if (yearSel) yearSel.innerHTML = `<option value="">Todos los años</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('')
-  if (catSel) catSel.innerHTML = `<option value="">Todas las categorías</option>` + cats.map(c => `<option value="${c}">${c}</option>`).join('')
+  fillSelect(yearSel, 'Todos los anos', years)
+  fillSelect(catSel, 'Todas las categorias', cats)
 }
 
 function renderHistoryView() {
@@ -717,48 +766,97 @@ function renderPredictions() {
 window.renderPredictions = renderPredictions
 
 // =================== TABLE ===================
-function renderTable() {
-  const search = document.getElementById('table-search')?.value.toLowerCase() || ''
-  const yearF = parseInt(document.getElementById('table-year-filter')?.value) || null
-  const catF = document.getElementById('table-cat-filter')?.value || ''
-
-  let rows = data.filter(d => {
-    let ok = true
-    if (search) ok = ok && (d.product.toLowerCase().includes(search) || d.category.toLowerCase().includes(search))
-    if (yearF) ok = ok && d.year === yearF
-    if (catF) ok = ok && d.category === catF
-    return ok
-  })
-
-  rows = rows.sort((a,b) => b.year - a.year || a.month - b.month)
-
-  const tbody = document.getElementById('table-body')
-  if (rows.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: var(--space-10); color: var(--color-text-muted)">No se encontraron registros</td></tr>`
-  } else {
-    tbody.innerHTML = rows.slice(0, 200).map(d => {
-      const prevY = data.find(r => r.product === d.product && r.year === d.year - 1 && r.month === d.month)
-      let delta = '', badgeCls = 'badge-flat'
-      if (prevY) {
-        const pct = ((d.price - prevY.price) / prevY.price) * 100
-        delta = fmtPct(pct)
-        badgeCls = pct > 0.5 ? 'badge-up' : pct < -0.5 ? 'badge-down' : 'badge-flat'
-      }
-      return `<tr>
-        <td><strong>${d.product}</strong></td>
-        <td>${d.category}</td>
-        <td>${d.year}</td>
-        <td>${d.month ? MONTH_NAMES[d.month-1] : '—'}</td>
-        <td style="font-variant-numeric: tabular-nums">${fmt(d.price)} €</td>
-        <td>${d.unit}</td>
-        <td>${delta ? `<span class="badge ${badgeCls}">${delta}</span>` : '—'}</td>
-        <td><button class="btn-delete" onclick="deleteRecord(${d.id})" title="Eliminar">✕</button></td>
-      </tr>`
-    }).join('')
+function getTableFilters() {
+  return {
+    search: document.getElementById('table-search')?.value || '',
+    year: parseInt(document.getElementById('table-year-filter')?.value) || null,
+    category: document.getElementById('table-cat-filter')?.value || '',
   }
-  document.getElementById('table-count').textContent = `Mostrando ${Math.min(rows.length, 200)} de ${rows.length} registros`
+}
+
+function renderTablePager() {
+  const pageInfo = document.getElementById('table-page-info')
+  const prevBtn = document.getElementById('table-prev')
+  const nextBtn = document.getElementById('table-next')
+  const totalPages = Math.max(1, Math.ceil(tableState.total / tableState.pageSize))
+  if (pageInfo) pageInfo.textContent = `Pagina ${tableState.page + 1} de ${totalPages}`
+  if (prevBtn) prevBtn.disabled = tableState.loading || tableState.page <= 0
+  if (nextBtn) nextBtn.disabled = tableState.loading || tableState.page >= totalPages - 1
+}
+
+function renderTableRows(rows) {
+  const tbody = document.getElementById('table-body')
+  if (!tbody) return
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: var(--space-10); color: var(--color-text-muted)">No se encontraron registros</td></tr>`
+    return
+  }
+
+  tbody.innerHTML = rows.map(d => {
+    const prevY = data.find(r => r.product === d.product && r.year === d.year - 1 && r.month === d.month)
+    let delta = '', badgeCls = 'badge-flat'
+    if (prevY) {
+      const pct = ((d.price - prevY.price) / prevY.price) * 100
+      delta = fmtPct(pct)
+      badgeCls = pct > 0.5 ? 'badge-up' : pct < -0.5 ? 'badge-down' : 'badge-flat'
+    }
+    return `<tr>
+      <td><strong>${d.product}</strong></td>
+      <td>${d.category}</td>
+      <td>${d.year}</td>
+      <td>${d.month ? MONTH_NAMES[d.month-1] : '-'}</td>
+      <td style="font-variant-numeric: tabular-nums">${fmt(d.price)} EUR</td>
+      <td>${d.unit}</td>
+      <td>${delta ? `<span class="badge ${badgeCls}">${delta}</span>` : '-'}</td>
+      <td><button class="btn-delete" onclick="deleteRecord(${d.id})" title="Eliminar">x</button></td>
+    </tr>`
+  }).join('')
+}
+
+async function renderTable(page = 0) {
+  const requestId = tableState.requestId + 1
+  tableState = { ...tableState, page: Math.max(page, 0), loading: true, requestId }
+  const tbody = document.getElementById('table-body')
+  const countEl = document.getElementById('table-count')
+  if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: var(--space-10); color: var(--color-text-muted)">Cargando...</td></tr>`
+  if (countEl) countEl.textContent = 'Consultando registros...'
+  renderTablePager()
+
+  try {
+    const result = await fetchRecordsPage({
+      ...getTableFilters(),
+      page: tableState.page,
+      pageSize: tableState.pageSize,
+    })
+    if (requestId !== tableState.requestId) return
+    tableState = { ...tableState, rows: result.rows, total: result.total, page: result.page, pageSize: result.pageSize, loading: false }
+    renderTableRows(result.rows)
+    const start = result.total ? result.page * result.pageSize + 1 : 0
+    const end = Math.min((result.page + 1) * result.pageSize, result.total)
+    if (countEl) countEl.textContent = `Mostrando ${start}-${end} de ${result.total} registros`
+  } catch (e) {
+    console.error(e)
+    tableState = { ...tableState, loading: false }
+    if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: var(--space-10); color: var(--color-error)">Error al cargar registros</td></tr>`
+    if (countEl) countEl.textContent = ''
+  }
+  renderTablePager()
 }
 window.renderTable = renderTable
+
+function scheduleTableRender() {
+  clearTimeout(tableRenderTimer)
+  tableRenderTimer = setTimeout(() => renderTable(0), 250)
+}
+window.scheduleTableRender = scheduleTableRender
+
+function changeTablePage(delta) {
+  if (tableState.loading) return
+  const totalPages = Math.max(1, Math.ceil(tableState.total / tableState.pageSize))
+  const nextPage = Math.min(Math.max(tableState.page + delta, 0), totalPages - 1)
+  if (nextPage !== tableState.page) renderTable(nextPage)
+}
+window.changeTablePage = changeTablePage
 
 async function deleteRecord(id) {
   try {
@@ -779,55 +877,61 @@ function initSearch() {
 }
 window.initSearch = initSearch
 
-function doSearch() {
+async function doSearch() {
   const product = document.getElementById('search-product').value
   const year = parseInt(document.getElementById('search-year').value) || null
   const month = parseInt(document.getElementById('search-month').value) || null
-
-  let results = data.filter(d => {
-    let ok = true
-    if (product) ok = ok && d.product === product
-    if (year) ok = ok && d.year === year
-    if (month) ok = ok && d.month === month
-    return ok
-  })
-
   const container = document.getElementById('search-results')
-  if (!results.length) {
-    container.innerHTML = `<div class="card"><div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><h3>Sin resultados</h3><p>Prueba con otros filtros de búsqueda</p></div></div>`
+
+  if (!product && !year && !month) {
+    container.innerHTML = `<div class="card"><div class="empty-state"><h3>Selecciona un filtro</h3><p>Acota por producto, ano o mes para consultar el historico.</p></div></div>`
     return
   }
 
-  const avgPrice = avg(results.map(d => d.price))
-  const maxPrice = Math.max(...results.map(d => d.price))
-  const minPrice = Math.min(...results.map(d => d.price))
+  container.innerHTML = `<div class="card"><div class="empty-state"><h3>Cargando...</h3><p>Consultando registros.</p></div></div>`
 
-  container.innerHTML = `
-    <div class="grid-3" style="margin-bottom: var(--space-6)">
-      <div class="kpi-card"><div class="kpi-label">Precio medio</div><div class="kpi-value">${fmt(avgPrice)} €</div></div>
-      <div class="kpi-card"><div class="kpi-label">Precio máximo</div><div class="kpi-value">${fmt(maxPrice)} €</div></div>
-      <div class="kpi-card"><div class="kpi-label">Precio mínimo</div><div class="kpi-value">${fmt(minPrice)} €</div></div>
-    </div>
-    <div class="table-wrap">
-      <table class="data-table">
-        <thead><tr><th>Producto</th><th>Categoría</th><th>Año</th><th>Mes</th><th>Precio</th><th>Unidad</th><th>Notas</th></tr></thead>
-        <tbody>
-          ${results.sort((a,b) => b.year-a.year || a.month-b.month).slice(0, 100).map(d => `
-            <tr>
-              <td><strong>${d.product}</strong></td>
-              <td>${d.category}</td>
-              <td>${d.year}</td>
-              <td>${d.month ? MONTH_NAMES[d.month-1] : '—'}</td>
-              <td style="font-variant-numeric:tabular-nums">${fmt(d.price)} €</td>
-              <td>${d.unit}</td>
-              <td style="color:var(--color-text-muted)">${d.notes || '—'}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-    <p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-3)">${results.length} resultados encontrados</p>
-  `
+  try {
+    const result = await fetchRecordsPage({ product, year, month, page: 0, pageSize: 100 })
+    const results = result.rows
+    if (!results.length) {
+      container.innerHTML = `<div class="card"><div class="empty-state"><h3>Sin resultados</h3><p>Prueba con otros filtros de busqueda.</p></div></div>`
+      return
+    }
+
+    const avgPrice = avg(results.map(d => d.price))
+    const maxPrice = Math.max(...results.map(d => d.price))
+    const minPrice = Math.min(...results.map(d => d.price))
+
+    container.innerHTML = `
+      <div class="grid-3" style="margin-bottom: var(--space-6)">
+        <div class="kpi-card"><div class="kpi-label">Precio medio</div><div class="kpi-value">${fmt(avgPrice)} EUR</div></div>
+        <div class="kpi-card"><div class="kpi-label">Precio maximo</div><div class="kpi-value">${fmt(maxPrice)} EUR</div></div>
+        <div class="kpi-card"><div class="kpi-label">Precio minimo</div><div class="kpi-value">${fmt(minPrice)} EUR</div></div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>Producto</th><th>Categoria</th><th>Ano</th><th>Mes</th><th>Precio</th><th>Unidad</th><th>Notas</th></tr></thead>
+          <tbody>
+            ${results.map(d => `
+              <tr>
+                <td><strong>${d.product}</strong></td>
+                <td>${d.category}</td>
+                <td>${d.year}</td>
+                <td>${d.month ? MONTH_NAMES[d.month-1] : '-'}</td>
+                <td style="font-variant-numeric:tabular-nums">${fmt(d.price)} EUR</td>
+                <td>${d.unit}</td>
+                <td style="color:var(--color-text-muted)">${d.notes || '-'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size:var(--text-xs);color:var(--color-text-muted);margin-top:var(--space-3)">Mostrando ${results.length} de ${result.total} resultados</p>
+    `
+  } catch (e) {
+    console.error(e)
+    container.innerHTML = `<div class="card"><div class="empty-state"><h3>Error al buscar</h3><p>No se pudieron cargar los resultados.</p></div></div>`
+  }
 }
 window.doSearch = doSearch
 
@@ -864,6 +968,7 @@ async function addRecord() {
   try {
     const saved = await dbAddRecord({ product, category, price, unit, year, month, notes })
     if (saved) data.push(saved)
+    if (saved) mergeFilterOptionsFromRows([saved])
     closeModal('add-modal')
     populateAllSelects()
     showToast('✓ Registro añadido')
@@ -879,7 +984,9 @@ window.addRecord = addRecord
 // =================== EXPORT / IMPORT ===================
 function exportCSV() {
   const headers = 'producto,categoria,precio,unidad,año,mes,notas'
-  const rows = data.map(d => `${d.product},${d.category},${d.price},${d.unit},${d.year},${d.month||''},${d.notes||''}`)
+  const activePage = document.querySelector('.page.active')?.id
+  const source = activePage === 'page-datos' && tableState.rows.length ? tableState.rows : data
+  const rows = source.map(d => `${d.product},${d.category},${d.price},${d.unit},${d.year},${d.month||''},${d.notes||''}`)
   const csv = [headers, ...rows].join('\n')
   const blob = new Blob([csv], { type: 'text/csv' })
   const a = document.createElement('a')
@@ -1092,6 +1199,7 @@ async function executeImport() {
   try {
     const saved = await dbAddRecords(records)
     data = data.concat(saved)
+    mergeFilterOptionsFromRows(saved)
     closeModal('import-modal')
     populateAllSelects()
     showToast(`✓ ${saved.length} registros importados`)
