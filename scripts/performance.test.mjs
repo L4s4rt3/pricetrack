@@ -19,3 +19,10 @@ test("vite chunks separate heavy vendors by responsibility", () => {
   assert.match(viteConfig, /charts:\s*\[\s*"recharts"\s*\]/);
   assert.doesNotMatch(viteConfig, /vendor:\s*\[[\s\S]*"@supabase\/supabase-js"/);
 });
+
+test("dashboard uses aggregate summary hook instead of full precios rows", () => {
+  const dashboard = readFileSync(new URL("../src/pages/Dashboard.tsx", import.meta.url), "utf8");
+
+  assert.doesNotMatch(dashboard, /usePrecios\(/);
+  assert.match(dashboard, /useDashboardSummary\(/);
+});
