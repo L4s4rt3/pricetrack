@@ -23,6 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { KPICard } from "@/components/KPICard";
 import { PageHeader } from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
+import { FALLBACK_CARRIER_SEEDS, FALLBACK_CLIENT_SEEDS } from "@/lib/logisticsFallback";
 import { readPersistentQuery, removePersistentQuery, writePersistentQuery } from "@/lib/persistentQueryCache";
 
 interface LogisticsPreset {
@@ -74,6 +75,7 @@ interface TripFields {
   horaCarga: string;
   horaDescarga: string;
   instructions: string;
+  successiveCarriersEnabled: boolean;
   successiveCarriers: string;
   carrierReservations: string;
   documents: string;
@@ -83,6 +85,10 @@ interface TripFields {
   peso: string;
   volume: string;
   specialAgreements: string;
+  usefulParticulars17: string;
+  nonContractual18: string;
+  cashOnDelivery19: string;
+  consigneeReceipt24: string;
   tractora: string;
   remolque: string;
   conductor: string;
@@ -109,7 +115,7 @@ const emptyPreset: LogisticsPreset = {
   consignee: "",
   carrier: "",
   load_place: "ECIJA",
-  load_country: "ESPANA",
+  load_country: "ESPAÑA",
   delivery_place: "",
   delivery_country: "",
   default_goods: "PALETS DE NARANJAS",
@@ -143,6 +149,7 @@ const emptyTrip: TripFields = {
   horaCarga: "",
   horaDescarga: "",
   instructions: "",
+  successiveCarriersEnabled: false,
   successiveCarriers: "",
   carrierReservations: "",
   documents: "",
@@ -152,6 +159,10 @@ const emptyTrip: TripFields = {
   peso: "",
   volume: "",
   specialAgreements: "",
+  usefulParticulars17: "",
+  nonContractual18: "",
+  cashOnDelivery19: "",
+  consigneeReceipt24: "",
   tractora: "",
   remolque: "",
   conductor: "",
@@ -376,6 +387,29 @@ function buildCmrCarriersFromTemplates(templates: LogisticsTemplateRow[]): CmrCa
   return Array.from(carriers.values()).sort((a, b) => b.occurrences - a.occurrences || a.name.localeCompare(b.name, "es"));
 }
 
+function buildFallbackClients(): CmrClient[] {
+  return FALLBACK_CLIENT_SEEDS.map((seed) => ({
+    client_key: `seed-${slug(seed.name)}`,
+    name: seed.name,
+    consignee: "",
+    transitario: "",
+    country: "",
+    default_goods: emptyPreset.default_goods,
+    is_edeka: normalize(seed.name).includes("edeka"),
+    occurrences: seed.occurrences,
+  }));
+}
+
+function buildFallbackCarriers(): CmrCarrier[] {
+  return FALLBACK_CARRIER_SEEDS.map((seed) => ({
+    carrier_key: `seed-${slug(seed.name)}`,
+    name: seed.name,
+    details: seed.name,
+    country: "",
+    occurrences: seed.occurrences,
+  }));
+}
+
 function escapeXml(value?: string) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -439,7 +473,7 @@ async function generateExactCmrPdf(preset: LogisticsPreset, trip: TripFields) {
   const form = pdfDoc.getForm();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const date = formatDate(trip.fechaCarga);
-  const successive = splitLines(trip.successiveCarriers, 4);
+  const successive = trip.successiveCarriersEnabled ? splitLines(trip.successiveCarriers, 4) : [];
 
   const values: Record<string, string> = {
     "001": CMR_COMPANY,
@@ -686,15 +720,24 @@ function worksheetXml(kind: DocumentKind, preset: LogisticsPreset, trip: TripFie
           ["Fecha carga", formatDate(trip.fechaCarga)],
           ["Lugar entrega", preset.delivery_place],
           ["Pais entrega", preset.delivery_country],
+          ["Cuadro 5 - Instrucciones", trip.instructions],
           ["Transportista", preset.carrier],
+          ["Cuadro 7 - Successive carriers", trip.successiveCarriersEnabled ? trip.successiveCarriers : ""],
+          ["Cuadro 8 - Reservas carrier", trip.carrierReservations],
+          ["Cuadro 9 - Documentos", trip.documents || [trip.documento1, trip.documento2].filter(Boolean).join(" / ")],
+          ["Cuadros 10-13 - Linea mercancia", buildGoodsLine(trip)],
+          ["Cuadro 14 - Peso bruto kg", trip.peso],
+          ["Cuadro 15 - Volumen m3", trip.volume],
+          ["Cuadro 16 - Acuerdos especiales", trip.specialAgreements],
+          ["Cuadro 17 - Otras indicaciones", trip.usefulParticulars17],
+          ["Cuadro 18 - Parte no contractual", trip.nonContractual18],
+          ["Cuadro 19 - Reembolso", trip.cashOnDelivery19],
           ["Conductor", trip.conductor],
           ["Tractora", trip.tractora],
           ["Remolque", trip.remolque],
-          ["Bultos", trip.bultos],
-          ["Mercancia", trip.mercancia],
-          ["Peso kg", trip.peso],
-          ["Documentos", [trip.documento1, trip.documento2].filter(Boolean).join(" / ")],
-          ["Instrucciones", trip.observaciones],
+          ["Cuadro 20", "This carriage is subject, notwithstanding any clause to the contrary, to the Convention on the Contract for the international Carriage of Goods by Road (CMR)"],
+          ["Cuadro 21 - Establecido en", `ECIJA - ${formatDate(trip.fechaCarga)}`],
+          ["Cuadro 24 - Recepcion destinatario", trip.consigneeReceipt24],
         ];
 
   return `<?xml version="1.0"?>
@@ -808,6 +851,211 @@ function TextAreaField({
         className="glass-field flex w-full rounded-md border border-[hsl(var(--glass-border))] px-3 py-2 text-sm outline-none focus:border-[hsl(var(--glass-border-accent))] focus:ring-2 focus:ring-primary/20"
       />
     </div>
+  );
+}
+
+function InlineCellInput({
+  value,
+  onChange,
+  type = "text",
+  readOnly = false,
+}: {
+  value: string;
+  onChange?: (value: string) => void;
+  type?: string;
+  readOnly?: boolean;
+}) {
+  return (
+    <Input
+      type={type}
+      value={value}
+      readOnly={readOnly}
+      onChange={(event) => onChange?.(event.target.value)}
+      className={`glass-field h-9 ${readOnly ? "opacity-80" : ""}`}
+    />
+  );
+}
+
+function InlineCellTextArea({
+  value,
+  onChange,
+  readOnly = false,
+  rows = 3,
+}: {
+  value: string;
+  onChange?: (value: string) => void;
+  readOnly?: boolean;
+  rows?: number;
+}) {
+  return (
+    <textarea
+      value={value}
+      readOnly={readOnly}
+      rows={rows}
+      onChange={(event) => onChange?.(event.target.value)}
+      className={`glass-field flex min-h-20 w-full rounded-md border border-[hsl(var(--glass-border))] px-3 py-2 text-sm outline-none focus:border-[hsl(var(--glass-border-accent))] focus:ring-2 focus:ring-primary/20 ${readOnly ? "opacity-80" : ""}`}
+    />
+  );
+}
+
+function CmrEntryTable({
+  fixed,
+  trip,
+  updateFixed,
+  updateTrip,
+  setSuccessiveCarriersEnabled,
+}: {
+  fixed: LogisticsPreset;
+  trip: TripFields;
+  updateFixed: (key: keyof LogisticsPreset, value: string) => void;
+  updateTrip: (key: keyof TripFields, value: string) => void;
+  setSuccessiveCarriersEnabled: (enabled: boolean) => void;
+}) {
+  return (
+    <Card className="glass-accented">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <FileText className="h-4 w-4 text-primary" />
+          Tabla de CMR
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="data-table-shell overflow-hidden rounded-[8px]">
+          <div className="table-scroll overflow-x-auto">
+            <table className="data-table w-full min-w-[900px] table-fixed border-separate border-spacing-0 text-left text-sm">
+              <thead className="table-head text-[10px] uppercase tracking-normal text-muted-foreground">
+                <tr>
+                  <th className="w-24 px-4 py-3">Cuadro</th>
+                  <th className="w-56 px-4 py-3">Dato</th>
+                  <th className="w-32 px-4 py-3">Tipo</th>
+                  <th className="px-4 py-3">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">1 / 22</td>
+                  <td className="px-4 py-3">Expedidor Lasarte</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Fijo</Badge></td>
+                  <td className="px-4 py-3"><InlineCellTextArea value={CMR_COMPANY} readOnly rows={4} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">2</td>
+                  <td className="px-4 py-3">Destinatario</td>
+                  <td className="px-4 py-3"><Badge>Cliente</Badge></td>
+                  <td className="px-4 py-3"><InlineCellTextArea value={fixed.consignee} onChange={(value) => updateFixed("consignee", value)} rows={4} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">3 / 21</td>
+                  <td className="px-4 py-3">Carga en Ecija</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Fecha manual</Badge></td>
+                  <td className="px-4 py-3">
+                    <div className="grid gap-2 md:grid-cols-[1fr_1fr_10rem]">
+                      <InlineCellInput value="ECIJA" readOnly />
+                      <InlineCellInput value="ESPAÑA" readOnly />
+                      <InlineCellInput type="date" value={trip.fechaCarga} onChange={(value) => updateTrip("fechaCarga", value)} />
+                    </div>
+                  </td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">4</td>
+                  <td className="px-4 py-3">Entrega / transitario</td>
+                  <td className="px-4 py-3"><Badge>Cliente</Badge></td>
+                  <td className="px-4 py-3">
+                    <div className="grid gap-2 md:grid-cols-[1fr_12rem]">
+                      <InlineCellInput value={fixed.delivery_place} onChange={(value) => updateFixed("delivery_place", value)} />
+                      <InlineCellInput value={fixed.delivery_country} onChange={(value) => updateFixed("delivery_country", value)} />
+                    </div>
+                  </td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">5</td>
+                  <td className="px-4 py-3">Instrucciones</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Opcional</Badge></td>
+                  <td className="px-4 py-3"><InlineCellInput value={trip.instructions} onChange={(value) => updateTrip("instructions", value)} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">6 / 23</td>
+                  <td className="px-4 py-3">Carrier</td>
+                  <td className="px-4 py-3"><Badge>Transportista</Badge></td>
+                  <td className="px-4 py-3"><InlineCellTextArea value={fixed.carrier} onChange={(value) => updateFixed("carrier", value)} rows={4} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">7</td>
+                  <td className="px-4 py-3">Successive carriers</td>
+                  <td className="px-4 py-3">
+                    <label className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={trip.successiveCarriersEnabled}
+                        onChange={(event) => setSuccessiveCarriersEnabled(event.target.checked)}
+                        className="h-4 w-4 accent-[hsl(var(--primary))]"
+                      />
+                      Hay
+                    </label>
+                  </td>
+                  <td className="px-4 py-3">
+                    {trip.successiveCarriersEnabled ? (
+                      <InlineCellTextArea value={trip.successiveCarriers} onChange={(value) => updateTrip("successiveCarriers", value)} rows={3} />
+                    ) : (
+                      <span className="text-sm text-muted-foreground">No aplica</span>
+                    )}
+                  </td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">8</td>
+                  <td className="px-4 py-3">Reservas del carrier</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Opcional</Badge></td>
+                  <td className="px-4 py-3"><InlineCellTextArea value={trip.carrierReservations} onChange={(value) => updateTrip("carrierReservations", value)} rows={3} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">9</td>
+                  <td className="px-4 py-3">Documentos entregados</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Opcional</Badge></td>
+                  <td className="px-4 py-3"><InlineCellInput value={trip.documents} onChange={(value) => updateTrip("documents", value)} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">10-13</td>
+                  <td className="px-4 py-3">Linea de mercancia</td>
+                  <td className="px-4 py-3"><Badge>Manual</Badge></td>
+                  <td className="px-4 py-3"><InlineCellInput value={trip.goodsLine} onChange={(value) => updateTrip("goodsLine", value)} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">14 / 15</td>
+                  <td className="px-4 py-3">Peso y volumen</td>
+                  <td className="px-4 py-3"><Badge>Manual</Badge></td>
+                  <td className="px-4 py-3">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <InlineCellInput value={trip.peso} onChange={(value) => updateTrip("peso", value)} />
+                      <InlineCellInput value={trip.volume} onChange={(value) => updateTrip("volume", value)} />
+                    </div>
+                  </td>
+                </tr>
+                {[
+                  ["16", "Acuerdos especiales", "specialAgreements"],
+                  ["17", "Otras indicaciones utiles", "usefulParticulars17"],
+                  ["18", "Parte no contractual", "nonContractual18"],
+                  ["19", "Reembolso", "cashOnDelivery19"],
+                  ["24", "Recepcion destinatario", "consigneeReceipt24"],
+                ].map(([box, label, key]) => (
+                  <tr key={box} className="table-row">
+                    <td className="px-4 py-3 font-semibold">{box}</td>
+                    <td className="px-4 py-3">{label}</td>
+                    <td className="px-4 py-3"><Badge variant="outline">Opcional</Badge></td>
+                    <td className="px-4 py-3"><InlineCellInput value={String(trip[key as keyof TripFields] ?? "")} onChange={(value) => updateTrip(key as keyof TripFields, value)} /></td>
+                  </tr>
+                ))}
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">20</td>
+                  <td className="px-4 py-3">Convenio CMR</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Fijo</Badge></td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">Texto fijo impreso en la plantilla.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -951,10 +1199,18 @@ export default function Logistica() {
           }
         }
 
-        if (loadedClients.length === 0) loadedClients = [manualClientFallback];
-        if (loadedCarriers.length === 0) loadedCarriers = [manualCarrierFallback];
+        if (loadedClients.length === 0 || loadedCarriers.length === 0) {
+          if (loadedClients.length === 0) loadedClients = buildFallbackClients();
+          if (loadedCarriers.length === 0) loadedCarriers = buildFallbackCarriers();
+        }
+
+        if (loadedClients.length === 0 || loadedCarriers.length === 0) {
+          if (loadedClients.length === 0) loadedClients = [manualClientFallback];
+          if (loadedCarriers.length === 0) loadedCarriers = [manualCarrierFallback];
+        }
+
         if (fallbackErrors.length > 0) {
-          toast.warning(`Logistica cargada en modo manual. ${fallbackErrors.join(" | ")}`);
+          toast.warning(`Logistica cargada con datos de respaldo. ${fallbackErrors.join(" | ")}`);
         }
       }
       setClients(loadedClients);
@@ -1268,71 +1524,56 @@ export default function Logistica() {
             </TabsContent>
 
             <TabsContent value="trip">
-              <Card className="glass-accented">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Route className="h-4 w-4 text-primary" />
-                    Informacion que cambia
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {activeTripFields.map(([key, label, type]) => (
-                      <div key={key}>
-                        <Label htmlFor={key} className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          {label}
-                        </Label>
-                        <Input
-                          id={key}
-                          type={type}
-                          value={trip[key]}
-                          onChange={(event) => updateTrip(key, event.target.value)}
-                          className="glass-field"
+              {documentMode === "cmr" ? (
+                <CmrEntryTable
+                  fixed={fixed}
+                  trip={trip}
+                  updateFixed={updateFixed}
+                  updateTrip={updateTrip}
+                  setSuccessiveCarriersEnabled={(enabled) =>
+                    setTrip((current) => ({
+                      ...current,
+                      successiveCarriersEnabled: enabled,
+                      successiveCarriers: enabled ? current.successiveCarriers : "",
+                    }))
+                  }
+                />
+              ) : (
+                <Card className="glass-accented">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Route className="h-4 w-4 text-primary" />
+                      Informacion que cambia
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {activeTripFields.map(([key, label, type]) => (
+                        <div key={key}>
+                          <Label htmlFor={key} className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            {label}
+                          </Label>
+                          <Input
+                            id={key}
+                            type={type}
+                            value={trip[key]}
+                            onChange={(event) => updateTrip(key, event.target.value)}
+                            className="glass-field"
+                          />
+                        </div>
+                      ))}
+                      <div className="md:col-span-2">
+                        <TextAreaField
+                          id="observaciones"
+                          label="Observaciones internas"
+                          value={trip.observaciones}
+                          onChange={(value) => updateTrip("observaciones", value)}
                         />
                       </div>
-                    ))}
-                    <div className="md:col-span-2">
-                      <TextAreaField
-                        id="observaciones"
-                        label="Observaciones internas"
-                        value={trip.observaciones}
-                        onChange={(value) => updateTrip("observaciones", value)}
-                      />
                     </div>
-                    {documentMode === "cmr" && (
-                      <>
-                        <div className="md:col-span-2">
-                          <TextAreaField
-                            id="successiveCarriers"
-                            label="Cuadro 7. Successive carriers"
-                            value={trip.successiveCarriers}
-                            onChange={(value) => updateTrip("successiveCarriers", value)}
-                            rows={3}
-                          />
-                        </div>
-                        <div className="md:col-span-2">
-                          <TextAreaField
-                            id="carrierReservations"
-                            label="Cuadro 8. Carrier reservations"
-                            value={trip.carrierReservations}
-                            onChange={(value) => updateTrip("carrierReservations", value)}
-                            rows={3}
-                          />
-                        </div>
-                        <div className="md:col-span-2">
-                          <TextAreaField
-                            id="specialAgreements"
-                            label="Cuadro 16. Special agreements"
-                            value={trip.specialAgreements}
-                            onChange={(value) => updateTrip("specialAgreements", value)}
-                            rows={4}
-                          />
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
 
             <TabsContent value="export">
