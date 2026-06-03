@@ -74,6 +74,10 @@ interface TripFields {
   fechaDescarga: string;
   horaCarga: string;
   horaDescarga: string;
+  routeOperator: string;
+  routeCarrierName: string;
+  vehiclePlate: string;
+  routeDescription: string;
   instructions: string;
   successiveCarriersEnabled: boolean;
   successiveCarriers: string;
@@ -106,6 +110,7 @@ const cmrClientsQueryKey = ["cmr-clients"] as const;
 const cmrCarriersQueryKey = ["cmr-carriers"] as const;
 
 const CMR_TEMPLATE_PATH = "/templates/plantilla-cmr.pdf";
+const ROUTE_TEMPLATE_PATH = "/templates/plantilla-hoja-ruta.pdf";
 const CMR_COMPANY = "Lasarte Cítricos S.L.\nCIF: B14800304\nCtra. Madrid-Cádiz, km 461\n41400";
 
 const emptyPreset: LogisticsPreset = {
@@ -148,6 +153,10 @@ const emptyTrip: TripFields = {
   fechaDescarga: today,
   horaCarga: "",
   horaDescarga: "",
+  routeOperator: "",
+  routeCarrierName: "",
+  vehiclePlate: "",
+  routeDescription: "",
   instructions: "",
   successiveCarriersEnabled: false,
   successiveCarriers: "",
@@ -519,6 +528,96 @@ async function generateExactCmrPdf(preset: LogisticsPreset, trip: TripFields) {
   return pdfDoc.save();
 }
 
+function wrapPdfLines(text: string, maxWidth: number, size: number, font: { widthOfTextAtSize: (line: string, size: number) => number }, maxLines = 4) {
+  const clean = String(text ?? "").replace(/\r/g, "");
+  const lines: string[] = [];
+
+  for (const paragraph of clean.split("\n")) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      lines.push("");
+      continue;
+    }
+
+    let current = "";
+    for (const word of words) {
+      const next = current ? `${current} ${word}` : word;
+      if (font.widthOfTextAtSize(next, size) <= maxWidth) {
+        current = next;
+      } else {
+        if (current) lines.push(current);
+        current = word;
+      }
+      if (lines.length >= maxLines) break;
+    }
+    if (lines.length >= maxLines) break;
+    if (current) lines.push(current);
+    if (lines.length >= maxLines) break;
+  }
+
+  return lines.slice(0, maxLines);
+}
+
+function routeDestination(preset: LogisticsPreset) {
+  return [preset.delivery_place, preset.delivery_country].filter(Boolean).join(" - ");
+}
+
+function routeMerchandiseDescription(trip: TripFields) {
+  return trip.routeDescription || [trip.bultos, trip.mercancia].filter(Boolean).join(" ");
+}
+
+async function generateExactRoutePdf(preset: LogisticsPreset, trip: TripFields) {
+  const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
+  const templateBytes = await fetch(ROUTE_TEMPLATE_PATH).then((response) => {
+    if (!response.ok) throw new Error("No se pudo cargar la plantilla de hoja de ruta.");
+    return response.arrayBuffer();
+  });
+
+  const pdfDoc = await PDFDocument.load(templateBytes);
+  while (pdfDoc.getPageCount() > 1) pdfDoc.removePage(1);
+
+  const page = pdfDoc.getPage(0);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const ink = rgb(0.05, 0.05, 0.06);
+  const small = 9.5;
+  const normal = 10.5;
+
+  const draw = (text: string, x: number, y: number, options: { size?: number; maxWidth?: number; maxLines?: number; lineHeight?: number; bold?: boolean } = {}) => {
+    const size = options.size ?? normal;
+    const selectedFont = options.bold ? bold : font;
+    const maxWidth = options.maxWidth ?? 220;
+    const lineHeight = options.lineHeight ?? size + 2.5;
+    const lines = wrapPdfLines(text, maxWidth, size, selectedFont, options.maxLines ?? 4);
+    lines.forEach((line, index) => {
+      page.drawText(line, { x, y: y - index * lineHeight, size, font: selectedFont, color: ink });
+    });
+  };
+
+  const carrierName = trip.routeCarrierName || firstLine(preset.carrier);
+  const vehicle = [
+    trip.vehiclePlate ? `Matrícula: ${trip.vehiclePlate}` : "",
+    trip.tractora ? `Tractora: ${trip.tractora}` : "",
+    trip.remolque ? `Remolque: ${trip.remolque}` : "",
+  ].filter(Boolean);
+
+  draw(trip.routeOperator, 322, 670, { maxWidth: 220, maxLines: 5 });
+  draw(carrierName, 62, 431, { maxWidth: 210, maxLines: 5 });
+  draw(preset.consignee || preset.name, 322, 431, { maxWidth: 225, maxLines: 6 });
+  draw(vehicle[0] ?? "", 62, 338, { maxWidth: 205, maxLines: 1 });
+  draw(trip.tractora, 112, 328, { maxWidth: 150, maxLines: 1 });
+  draw(trip.remolque, 112, 299, { maxWidth: 150, maxLines: 1 });
+  draw("ECIJA", 330, 328, { maxWidth: 120, maxLines: 1, bold: true });
+  draw(routeDestination(preset), 330, 299, { maxWidth: 210, maxLines: 3 });
+  draw(`${formatDate(trip.fechaCarga)} ${trip.horaCarga}`.trim(), 132, 226, { maxWidth: 120, maxLines: 1 });
+  draw(`${formatDate(trip.fechaDescarga)} ${trip.horaDescarga}`.trim(), 410, 226, { maxWidth: 120, maxLines: 1 });
+  draw(routeMerchandiseDescription(trip), 62, 162, { size: small, maxWidth: 390, maxLines: 7, lineHeight: 11.5 });
+  draw(trip.peso, 490, 162, { size: small, maxWidth: 70, maxLines: 1 });
+  draw(trip.observaciones, 62, 34, { size: 8.5, maxWidth: 480, maxLines: 3, lineHeight: 10 });
+
+  return pdfDoc.save();
+}
+
 function printHtml(title: string, body: string) {
   const printWindow = window.open("", "_blank");
   if (!printWindow) {
@@ -690,27 +789,57 @@ function renderCmrHtml(preset: LogisticsPreset, trip: TripFields) {
 }
 
 function worksheetXml(kind: DocumentKind, preset: LogisticsPreset, trip: TripFields) {
-  const rows =
-    kind === "route"
-      ? [
-          ["HOJA DE RUTA", ""],
-          ["Cliente", preset.name],
-          ["Destinatario", preset.consignee],
-          ["Transportista", preset.carrier],
-          ["Conductor", trip.conductor],
-          ["Origen", `${preset.load_place} - ${preset.load_country}`],
-          ["Destino", `${preset.delivery_place} - ${preset.delivery_country}`],
-          ["Fecha carga", `${formatDate(trip.fechaCarga)} ${trip.horaCarga}`],
-          ["Fecha descarga", `${formatDate(trip.fechaDescarga)} ${trip.horaDescarga}`],
-          ["Tractora", trip.tractora],
-          ["Remolque", trip.remolque],
-          ["Bultos", trip.bultos],
-          ["Mercancia", trip.mercancia],
-          ["Peso kg", trip.peso],
-          ["Documentos", [trip.documento1, trip.documento2].filter(Boolean).join(" / ")],
-          ["Observaciones", trip.observaciones],
-        ]
-      : [
+  if (kind === "route") {
+    const carrierName = trip.routeCarrierName || firstLine(preset.carrier);
+    return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  <Styles>
+    <Style ss:ID="Title"><Alignment ss:Horizontal="Center"/><Font ss:Bold="1" ss:Size="14"/></Style>
+    <Style ss:ID="SubTitle"><Alignment ss:Horizontal="Center"/><Font ss:Size="10"/></Style>
+    <Style ss:ID="Header"><Font ss:Bold="1"/><Interior ss:Color="#E5E7EB" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+    <Style ss:ID="Label"><Font ss:Bold="1"/><Interior ss:Color="#F9FAFB" ss:Pattern="Solid"/></Style>
+    <Style ss:ID="Text"><Alignment ss:WrapText="1" ss:Vertical="Top"/></Style>
+    <Style ss:ID="Box"><Alignment ss:WrapText="1" ss:Vertical="Top"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
+    <Style ss:ID="Signature"><Alignment ss:Vertical="Top"/><Font ss:Bold="1"/></Style>
+  </Styles>
+  <Worksheet ss:Name="Hoja de ruta">
+    <Table>
+      <Column ss:Width="105"/><Column ss:Width="105"/><Column ss:Width="105"/><Column ss:Width="105"/><Column ss:Width="105"/><Column ss:Width="105"/>
+      <Row ss:Height="22"><Cell ss:MergeAcross="5" ss:StyleID="Title"><Data ss:Type="String">DOCUMENTO DE CONTROL DE MERCANCIAS</Data></Cell></Row>
+      <Row ss:Height="18"><Cell ss:MergeAcross="5" ss:StyleID="SubTitle"><Data ss:Type="String">Orden FOM 238/2003 - BOE Núm. 38 de 13 de Febrero de 2003</Data></Cell></Row>
+      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">EMPRESA CARGADORA</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">OPERADOR DE TRANSPORTE</Data></Cell></Row>
+      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String">Lasarte Cítricos S.L.</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(trip.routeOperator)}</Data></Cell></Row>
+      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String">CIF: B14800304</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String"></Data></Cell></Row>
+      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String">Ctra. Madrid-Cádiz, km 461</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String"></Data></Cell></Row>
+      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String">41400</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String"></Data></Cell></Row>
+      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">NOMBRE TRANSPORTISTA</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">DESTINATARIO</Data></Cell></Row>
+      <Row ss:Height="76"><Cell ss:MergeAcross="2" ss:StyleID="Box"><Data ss:Type="String">${escapeXml(carrierName)}</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Box"><Data ss:Type="String">${escapeXml(preset.consignee || preset.name)}</Data></Cell></Row>
+      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">MATRICULA DEL VEHICULO</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">DATOS EXPEDICION</Data></Cell></Row>
+      <Row ss:Height="24"><Cell ss:StyleID="Label"><Data ss:Type="String">Matricula:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(trip.vehiclePlate)}</Data></Cell><Cell ss:StyleID="Label"><Data ss:Type="String">Origen:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">ECIJA</Data></Cell></Row>
+      <Row ss:Height="24"><Cell ss:StyleID="Label"><Data ss:Type="String">Tractora:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(trip.tractora)}</Data></Cell><Cell ss:StyleID="Label"><Data ss:Type="String">Destino:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(routeDestination(preset))}</Data></Cell></Row>
+      <Row ss:Height="24"><Cell ss:StyleID="Label"><Data ss:Type="String">Remolque:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(trip.remolque)}</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String"></Data></Cell></Row>
+      <Row ss:Height="22"><Cell ss:MergeAcross="5" ss:StyleID="Header"><Data ss:Type="String">MERCANCIA</Data></Cell></Row>
+      <Row ss:Height="24"><Cell ss:StyleID="Label"><Data ss:Type="String">Fecha Carga:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(`${formatDate(trip.fechaCarga)} ${trip.horaCarga}`.trim())}</Data></Cell><Cell ss:StyleID="Label"><Data ss:Type="String">Fecha Descarga:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(`${formatDate(trip.fechaDescarga)} ${trip.horaDescarga}`.trim())}</Data></Cell></Row>
+      <Row ss:Height="22"><Cell ss:MergeAcross="4" ss:StyleID="Label"><Data ss:Type="String">Descripcion</Data></Cell><Cell ss:StyleID="Label"><Data ss:Type="String">Peso Kg.</Data></Cell></Row>
+      <Row ss:Height="78"><Cell ss:MergeAcross="4" ss:StyleID="Box"><Data ss:Type="String">${escapeXml(routeMerchandiseDescription(trip))}</Data></Cell><Cell ss:StyleID="Box"><Data ss:Type="String">${escapeXml(trip.peso)}</Data></Cell></Row>
+      <Row ss:Height="22"><Cell ss:MergeAcross="5" ss:StyleID="Header"><Data ss:Type="String">OBSERVACIONES</Data></Cell></Row>
+      <Row ss:Height="56"><Cell ss:MergeAcross="5" ss:StyleID="Box"><Data ss:Type="String">${escapeXml(trip.observaciones)}</Data></Cell></Row>
+      <Row ss:Height="60"><Cell ss:MergeAcross="1" ss:StyleID="Signature"><Data ss:Type="String">Firma Cargador:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Signature"><Data ss:Type="String">Firma Transportista:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Signature"><Data ss:Type="String">Firma Destinatario:</Data></Cell></Row>
+    </Table>
+    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+      <PageSetup><Layout x:Orientation="Portrait"/><PageMargins x:Bottom="0.35" x:Left="0.35" x:Right="0.35" x:Top="0.35"/></PageSetup>
+      <FitToPage/>
+      <Print><FitWidth>1</FitWidth><FitHeight>1</FitHeight></Print>
+    </WorksheetOptions>
+  </Worksheet>
+</Workbook>`;
+  }
+
+  const rows = [
           ["CARTA DE PORTE CMR", ""],
           ["N. CMR", trip.numeroCarta],
           ["Expedidor", preset.sender],
@@ -1059,6 +1188,131 @@ function CmrEntryTable({
   );
 }
 
+function RouteEntryTable({
+  fixed,
+  trip,
+  updateFixed,
+  updateTrip,
+}: {
+  fixed: LogisticsPreset;
+  trip: TripFields;
+  updateFixed: (key: keyof LogisticsPreset, value: string) => void;
+  updateTrip: (key: keyof TripFields, value: string) => void;
+}) {
+  return (
+    <Card className="glass-accented">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Route className="h-4 w-4 text-primary" />
+          Tabla de hoja de ruta
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="data-table-shell overflow-hidden rounded-[8px]">
+          <div className="table-scroll overflow-x-auto">
+            <table className="data-table w-full min-w-[900px] table-fixed border-separate border-spacing-0 text-left text-sm">
+              <thead className="table-head text-[10px] uppercase tracking-normal text-muted-foreground">
+                <tr>
+                  <th className="w-52 px-4 py-3">Bloque</th>
+                  <th className="w-56 px-4 py-3">Dato</th>
+                  <th className="w-32 px-4 py-3">Tipo</th>
+                  <th className="px-4 py-3">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">Empresa cargadora</td>
+                  <td className="px-4 py-3">Lasarte</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Fijo</Badge></td>
+                  <td className="px-4 py-3"><InlineCellTextArea value={CMR_COMPANY} readOnly rows={4} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">Operador de transporte</td>
+                  <td className="px-4 py-3">Operador</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Opcional</Badge></td>
+                  <td className="px-4 py-3"><InlineCellInput value={trip.routeOperator} onChange={(value) => updateTrip("routeOperator", value)} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">Nombre transportista</td>
+                  <td className="px-4 py-3">Transportista seleccionado</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Opcional</Badge></td>
+                  <td className="px-4 py-3"><InlineCellTextArea value={trip.routeCarrierName} onChange={(value) => updateTrip("routeCarrierName", value)} rows={3} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">Destinatario</td>
+                  <td className="px-4 py-3">Cliente y datos</td>
+                  <td className="px-4 py-3"><Badge>Cliente</Badge></td>
+                  <td className="px-4 py-3"><InlineCellTextArea value={fixed.consignee} onChange={(value) => updateFixed("consignee", value)} rows={4} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">Matricula del vehiculo</td>
+                  <td className="px-4 py-3">Matricula / tractora / remolque</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Opcional</Badge></td>
+                  <td className="px-4 py-3">
+                    <div className="grid gap-2 md:grid-cols-3">
+                      <InlineCellInput value={trip.vehiclePlate} onChange={(value) => updateTrip("vehiclePlate", value)} />
+                      <InlineCellInput value={trip.tractora} onChange={(value) => updateTrip("tractora", value)} />
+                      <InlineCellInput value={trip.remolque} onChange={(value) => updateTrip("remolque", value)} />
+                    </div>
+                  </td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">Datos expedicion</td>
+                  <td className="px-4 py-3">Origen y destino</td>
+                  <td className="px-4 py-3"><Badge>Cliente</Badge></td>
+                  <td className="px-4 py-3">
+                    <div className="grid gap-2 md:grid-cols-[9rem_1fr_12rem]">
+                      <InlineCellInput value="ECIJA" readOnly />
+                      <InlineCellInput value={fixed.delivery_place} onChange={(value) => updateFixed("delivery_place", value)} />
+                      <InlineCellInput value={fixed.delivery_country} onChange={(value) => updateFixed("delivery_country", value)} />
+                    </div>
+                  </td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">Mercancia</td>
+                  <td className="px-4 py-3">Fechas</td>
+                  <td className="px-4 py-3"><Badge>Selector</Badge></td>
+                  <td className="px-4 py-3">
+                    <div className="grid gap-2 md:grid-cols-4">
+                      <InlineCellInput type="date" value={trip.fechaCarga} onChange={(value) => updateTrip("fechaCarga", value)} />
+                      <InlineCellInput type="time" value={trip.horaCarga} onChange={(value) => updateTrip("horaCarga", value)} />
+                      <InlineCellInput type="date" value={trip.fechaDescarga} onChange={(value) => updateTrip("fechaDescarga", value)} />
+                      <InlineCellInput type="time" value={trip.horaDescarga} onChange={(value) => updateTrip("horaDescarga", value)} />
+                    </div>
+                  </td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">Descripcion</td>
+                  <td className="px-4 py-3">Mercancia y kg</td>
+                  <td className="px-4 py-3"><Badge>Manual</Badge></td>
+                  <td className="px-4 py-3">
+                    <div className="grid gap-2 md:grid-cols-[1fr_10rem]">
+                      <InlineCellTextArea value={trip.routeDescription} onChange={(value) => updateTrip("routeDescription", value)} rows={3} />
+                      <InlineCellInput value={trip.peso} onChange={(value) => updateTrip("peso", value)} />
+                    </div>
+                  </td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">Observaciones</td>
+                  <td className="px-4 py-3">Texto libre</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Opcional</Badge></td>
+                  <td className="px-4 py-3"><InlineCellTextArea value={trip.observaciones} onChange={(value) => updateTrip("observaciones", value)} rows={3} /></td>
+                </tr>
+                <tr className="table-row">
+                  <td className="px-4 py-3 font-semibold">Firmas</td>
+                  <td className="px-4 py-3">Cargador / transportista / destinatario</td>
+                  <td className="px-4 py-3"><Badge variant="outline">Fijo</Badge></td>
+                  <td className="px-4 py-3 text-sm text-muted-foreground">Se imprimen como huecos de firma en la plantilla.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Logistica() {
   const [presets, setPresets] = useState<LogisticsPreset[]>([]);
   const [templates, setTemplates] = useState<LogisticsTemplateRow[]>([]);
@@ -1251,6 +1505,7 @@ export default function Logistica() {
       ...current,
       goodsLine: current.goodsLine || selectedClient.default_goods,
       mercancia: selectedClient.default_goods || current.mercancia,
+      routeDescription: current.routeDescription || selectedClient.default_goods,
     }));
   }, [selectedClient]);
 
@@ -1259,6 +1514,10 @@ export default function Logistica() {
     setFixed((current) => ({
       ...current,
       carrier: selectedCarrier.details,
+    }));
+    setTrip((current) => ({
+      ...current,
+      routeCarrierName: current.routeCarrierName || selectedCarrier.details,
     }));
   }, [selectedCarrier]);
 
@@ -1281,6 +1540,10 @@ export default function Logistica() {
       delivery_country: "",
       default_goods: "",
     }));
+    setTrip((current) => ({
+      ...current,
+      routeDescription: "",
+    }));
   };
 
   const clearSelectedCarrier = () => {
@@ -1289,6 +1552,10 @@ export default function Logistica() {
     setFixed((current) => ({
       ...current,
       carrier: "",
+    }));
+    setTrip((current) => ({
+      ...current,
+      routeCarrierName: "",
     }));
   };
 
@@ -1306,6 +1573,18 @@ export default function Logistica() {
       );
     } catch (exportError) {
       toast.error(exportError instanceof Error ? exportError.message : "No se pudo generar el CMR.");
+    }
+  };
+
+  const exportExactRoutePdf = async () => {
+    try {
+      const pdfBytes = await generateExactRoutePdf(fixed, trip);
+      downloadBlob(
+        new Blob([pdfBytes], { type: "application/pdf" }),
+        `hoja_ruta_${safeFilename(fixed.name)}_${Date.now()}.pdf`,
+      );
+    } catch (exportError) {
+      toast.error(exportError instanceof Error ? exportError.message : "No se pudo generar la hoja de ruta.");
     }
   };
 
@@ -1340,7 +1619,6 @@ export default function Logistica() {
   };
 
   const documentTitle = documentMode === "cmr" ? "CMR" : "Hoja de Ruta";
-  const activeTripFields = documentMode === "cmr" ? tripFields : routeTripFields;
 
   return (
     <div className="page-shell">
@@ -1539,40 +1817,7 @@ export default function Logistica() {
                   }
                 />
               ) : (
-                <Card className="glass-accented">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Route className="h-4 w-4 text-primary" />
-                      Informacion que cambia
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {activeTripFields.map(([key, label, type]) => (
-                        <div key={key}>
-                          <Label htmlFor={key} className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            {label}
-                          </Label>
-                          <Input
-                            id={key}
-                            type={type}
-                            value={trip[key]}
-                            onChange={(event) => updateTrip(key, event.target.value)}
-                            className="glass-field"
-                          />
-                        </div>
-                      ))}
-                      <div className="md:col-span-2">
-                        <TextAreaField
-                          id="observaciones"
-                          label="Observaciones internas"
-                          value={trip.observaciones}
-                          onChange={(value) => updateTrip("observaciones", value)}
-                        />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <RouteEntryTable fixed={fixed} trip={trip} updateFixed={updateFixed} updateTrip={updateTrip} />
               )}
             </TabsContent>
 
@@ -1600,7 +1845,7 @@ export default function Logistica() {
                   <div className="grid gap-3 md:grid-cols-2">
                     {documentMode === "route" ? (
                       <>
-                        <Button onClick={() => printDocument("route")}>
+                        <Button onClick={exportExactRoutePdf}>
                           <Printer className="mr-2 h-4 w-4" />
                           Hoja de ruta PDF
                         </Button>
