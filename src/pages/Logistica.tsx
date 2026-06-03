@@ -25,83 +25,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { FALLBACK_CARRIER_SEEDS, FALLBACK_CLIENT_SEEDS } from "@/lib/logisticsFallback";
 import { readPersistentQuery, removePersistentQuery, writePersistentQuery } from "@/lib/persistentQueryCache";
-
-interface LogisticsPreset {
-  id?: string;
-  preset_key: string;
-  name: string;
-  sender: string;
-  consignee: string;
-  carrier: string;
-  load_place: string;
-  load_country: string;
-  delivery_place: string;
-  delivery_country: string;
-  default_goods: string;
-  default_instructions: string;
-  source_files?: string[];
-}
-
-interface LogisticsTemplateRow {
-  kind: "route" | "cmr";
-  name: string;
-  original_path: string | null;
-  storage_path: string;
-}
-
-interface CmrClient {
-  client_key: string;
-  name: string;
-  consignee: string;
-  transitario: string;
-  country: string;
-  default_goods: string;
-  is_edeka: boolean;
-  occurrences: number;
-}
-
-interface CmrCarrier {
-  carrier_key: string;
-  name: string;
-  details: string;
-  country: string;
-  occurrences: number;
-}
-
-interface TripFields {
-  numeroCarta: string;
-  fechaCarga: string;
-  fechaDescarga: string;
-  horaCarga: string;
-  horaDescarga: string;
-  routeOperator: string;
-  routeCarrierName: string;
-  vehiclePlate: string;
-  routeDescription: string;
-  instructions: string;
-  successiveCarriersEnabled: boolean;
-  successiveCarriers: string;
-  carrierReservations: string;
-  documents: string;
-  goodsLine: string;
-  bultos: string;
-  mercancia: string;
-  peso: string;
-  volume: string;
-  specialAgreements: string;
-  usefulParticulars17: string;
-  nonContractual18: string;
-  cashOnDelivery19: string;
-  consigneeReceipt24: string;
-  tractora: string;
-  remolque: string;
-  conductor: string;
-  documento1: string;
-  documento2: string;
-  observaciones: string;
-}
-
-type DocumentKind = "route" | "cmr";
+import type { CmrCarrier, CmrClient, DocumentKind, LogisticsPreset, LogisticsTemplateRow, TripFields } from "@/features/logistica/types";
+import { firstLine, formatDate, safeFilename } from "@/features/logistica/formatters";
+import { generateExactCmrPdf, generateExactRoutePdf } from "@/features/logistica/pdfExporters";
+import { worksheetXml } from "@/features/logistica/excelExporters";
 
 const today = new Date().toISOString().slice(0, 10);
 const presetsQueryKey = ["logistics-presets"] as const;
@@ -109,8 +36,6 @@ const templatesQueryKey = ["logistics-templates-for-presets"] as const;
 const cmrClientsQueryKey = ["cmr-clients"] as const;
 const cmrCarriersQueryKey = ["cmr-carriers"] as const;
 
-const CMR_TEMPLATE_PATH = "/templates/plantilla-cmr.pdf";
-const ROUTE_TEMPLATE_PATH = "/templates/plantilla-hoja-ruta.pdf";
 const CMR_COMPANY = "Lasarte Cítricos S.L.\nCIF: B14800304\nCtra. Madrid-Cádiz, km 461\n41400";
 
 const emptyPreset: LogisticsPreset = {
@@ -269,10 +194,6 @@ function presetFromTemplate(template: LogisticsTemplateRow): LogisticsPreset {
   };
 }
 
-function firstLine(value: string) {
-  return value.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? "";
-}
-
 function preferFilled(current: string, next: string) {
   const cleanNext = next.trim();
   if (!cleanNext) return current;
@@ -419,27 +340,13 @@ function buildFallbackCarriers(): CmrCarrier[] {
   }));
 }
 
-function escapeXml(value?: string) {
+function escapeHtml(value?: string) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function escapeHtml(value?: string) {
-  return escapeXml(value).replace(/\n/g, "<br />");
-}
-
-function safeFilename(value: string) {
-  return slug(value).replace(/-/g, "_");
-}
-
-function formatDate(value: string) {
-  if (!value) return "";
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.valueOf())) return value;
-  return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+    .replace(/"/g, "&quot;")
+    .replace(/\n/g, "<br />");
 }
 
 function describeLoadError(label: string, error: unknown) {
@@ -457,165 +364,6 @@ function downloadBlob(blob: Blob, filename: string) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
-}
-
-function splitLines(value: string, max = 4) {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, max);
-}
-
-function buildGoodsLine(trip: TripFields) {
-  return trip.goodsLine || [trip.documento1, trip.bultos, trip.mercancia].filter(Boolean).join("   ");
-}
-
-async function generateExactCmrPdf(preset: LogisticsPreset, trip: TripFields) {
-  const { PDFDocument, StandardFonts } = await import("pdf-lib");
-  const templateBytes = await fetch(CMR_TEMPLATE_PATH).then((response) => {
-    if (!response.ok) throw new Error("No se pudo cargar la plantilla CMR vacia.");
-    return response.arrayBuffer();
-  });
-
-  const pdfDoc = await PDFDocument.load(templateBytes);
-  const form = pdfDoc.getForm();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const date = formatDate(trip.fechaCarga);
-  const successive = trip.successiveCarriersEnabled ? splitLines(trip.successiveCarriers, 4) : [];
-
-  const values: Record<string, string> = {
-    "001": CMR_COMPANY,
-    NumCarta: trip.numeroCarta,
-    "002": preset.consignee,
-    "003_1": "ECIJA",
-    "003_2": "ESPAÑA",
-    "003_3": date,
-    "004_1": preset.delivery_place ? `TRANSITARIO: ${preset.delivery_place}` : "",
-    "004_2": preset.delivery_country,
-    "005": trip.instructions,
-    "006": preset.carrier,
-    "007_1": successive[0] ?? "",
-    "007_2": successive[1] ?? "",
-    "007_3": successive[2] ?? "",
-    "007_4": successive[3] ?? "",
-    "008_01": trip.carrierReservations,
-    "008_02": "",
-    "009": trip.documents || [trip.documento1, trip.documento2].filter(Boolean).join("\n"),
-    "010_01": buildGoodsLine(trip),
-    "014_01": trip.peso,
-    "015_01": trip.volume,
-    "016": trip.specialAgreements,
-    "021_01": "ECIJA",
-    "021_02": date,
-    "021_03": "",
-    "022": CMR_COMPANY,
-    "023": preset.carrier,
-    TRACTORA: trip.tractora,
-    REMOLQUE: trip.remolque,
-  };
-
-  for (const [name, value] of Object.entries(values)) {
-    try {
-      form.getTextField(name).setText(value ?? "");
-    } catch {
-      // Historic and blank templates do not always expose every optional field.
-    }
-  }
-
-  form.updateFieldAppearances(font);
-  form.flatten();
-  return pdfDoc.save();
-}
-
-function wrapPdfLines(text: string, maxWidth: number, size: number, font: { widthOfTextAtSize: (line: string, size: number) => number }, maxLines = 4) {
-  const clean = String(text ?? "").replace(/\r/g, "");
-  const lines: string[] = [];
-
-  for (const paragraph of clean.split("\n")) {
-    const words = paragraph.split(/\s+/).filter(Boolean);
-    if (words.length === 0) {
-      lines.push("");
-      continue;
-    }
-
-    let current = "";
-    for (const word of words) {
-      const next = current ? `${current} ${word}` : word;
-      if (font.widthOfTextAtSize(next, size) <= maxWidth) {
-        current = next;
-      } else {
-        if (current) lines.push(current);
-        current = word;
-      }
-      if (lines.length >= maxLines) break;
-    }
-    if (lines.length >= maxLines) break;
-    if (current) lines.push(current);
-    if (lines.length >= maxLines) break;
-  }
-
-  return lines.slice(0, maxLines);
-}
-
-function routeDestination(preset: LogisticsPreset) {
-  return [preset.delivery_place, preset.delivery_country].filter(Boolean).join(" - ");
-}
-
-function routeMerchandiseDescription(trip: TripFields) {
-  return trip.routeDescription || [trip.bultos, trip.mercancia].filter(Boolean).join(" ");
-}
-
-async function generateExactRoutePdf(preset: LogisticsPreset, trip: TripFields) {
-  const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
-  const templateBytes = await fetch(ROUTE_TEMPLATE_PATH).then((response) => {
-    if (!response.ok) throw new Error("No se pudo cargar la plantilla de hoja de ruta.");
-    return response.arrayBuffer();
-  });
-
-  const pdfDoc = await PDFDocument.load(templateBytes);
-  while (pdfDoc.getPageCount() > 1) pdfDoc.removePage(1);
-
-  const page = pdfDoc.getPage(0);
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-  const ink = rgb(0.05, 0.05, 0.06);
-  const small = 9.5;
-  const normal = 10.5;
-
-  const draw = (text: string, x: number, y: number, options: { size?: number; maxWidth?: number; maxLines?: number; lineHeight?: number; bold?: boolean } = {}) => {
-    const size = options.size ?? normal;
-    const selectedFont = options.bold ? bold : font;
-    const maxWidth = options.maxWidth ?? 220;
-    const lineHeight = options.lineHeight ?? size + 2.5;
-    const lines = wrapPdfLines(text, maxWidth, size, selectedFont, options.maxLines ?? 4);
-    lines.forEach((line, index) => {
-      page.drawText(line, { x, y: y - index * lineHeight, size, font: selectedFont, color: ink });
-    });
-  };
-
-  const carrierName = trip.routeCarrierName || firstLine(preset.carrier);
-  const vehicle = [
-    trip.vehiclePlate ? `Matrícula: ${trip.vehiclePlate}` : "",
-    trip.tractora ? `Tractora: ${trip.tractora}` : "",
-    trip.remolque ? `Remolque: ${trip.remolque}` : "",
-  ].filter(Boolean);
-
-  draw(trip.routeOperator, 322, 670, { maxWidth: 220, maxLines: 5 });
-  draw(carrierName, 62, 431, { maxWidth: 210, maxLines: 5 });
-  draw(preset.consignee || preset.name, 322, 431, { maxWidth: 225, maxLines: 6 });
-  draw(vehicle[0] ?? "", 62, 338, { maxWidth: 205, maxLines: 1 });
-  draw(trip.tractora, 112, 328, { maxWidth: 150, maxLines: 1 });
-  draw(trip.remolque, 112, 299, { maxWidth: 150, maxLines: 1 });
-  draw("ECIJA", 330, 328, { maxWidth: 120, maxLines: 1, bold: true });
-  draw(routeDestination(preset), 330, 299, { maxWidth: 210, maxLines: 3 });
-  draw(`${formatDate(trip.fechaCarga)} ${trip.horaCarga}`.trim(), 132, 226, { maxWidth: 120, maxLines: 1 });
-  draw(`${formatDate(trip.fechaDescarga)} ${trip.horaDescarga}`.trim(), 410, 226, { maxWidth: 120, maxLines: 1 });
-  draw(routeMerchandiseDescription(trip), 62, 162, { size: small, maxWidth: 390, maxLines: 7, lineHeight: 11.5 });
-  draw(trip.peso, 490, 162, { size: small, maxWidth: 70, maxLines: 1 });
-  draw(trip.observaciones, 62, 34, { size: 8.5, maxWidth: 480, maxLines: 3, lineHeight: 10 });
-
-  return pdfDoc.save();
 }
 
 function printHtml(title: string, body: string) {
@@ -786,113 +534,6 @@ function renderCmrHtml(preset: LogisticsPreset, trip: TripFields) {
       <div class="signature">23. Firma y sello del transportista</div>
     </section>
   </main>`;
-}
-
-function worksheetXml(kind: DocumentKind, preset: LogisticsPreset, trip: TripFields) {
-  if (kind === "route") {
-    const carrierName = trip.routeCarrierName || firstLine(preset.carrier);
-    return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
-  xmlns:o="urn:schemas-microsoft-com:office:office"
-  xmlns:x="urn:schemas-microsoft-com:office:excel"
-  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-  <Styles>
-    <Style ss:ID="Title"><Alignment ss:Horizontal="Center"/><Font ss:Bold="1" ss:Size="14"/></Style>
-    <Style ss:ID="SubTitle"><Alignment ss:Horizontal="Center"/><Font ss:Size="10"/></Style>
-    <Style ss:ID="Header"><Font ss:Bold="1"/><Interior ss:Color="#E5E7EB" ss:Pattern="Solid"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-    <Style ss:ID="Label"><Font ss:Bold="1"/><Interior ss:Color="#F9FAFB" ss:Pattern="Solid"/></Style>
-    <Style ss:ID="Text"><Alignment ss:WrapText="1" ss:Vertical="Top"/></Style>
-    <Style ss:ID="Box"><Alignment ss:WrapText="1" ss:Vertical="Top"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/><Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/></Borders></Style>
-    <Style ss:ID="Signature"><Alignment ss:Vertical="Top"/><Font ss:Bold="1"/></Style>
-  </Styles>
-  <Worksheet ss:Name="Hoja de ruta">
-    <Table>
-      <Column ss:Width="105"/><Column ss:Width="105"/><Column ss:Width="105"/><Column ss:Width="105"/><Column ss:Width="105"/><Column ss:Width="105"/>
-      <Row ss:Height="22"><Cell ss:MergeAcross="5" ss:StyleID="Title"><Data ss:Type="String">DOCUMENTO DE CONTROL DE MERCANCIAS</Data></Cell></Row>
-      <Row ss:Height="18"><Cell ss:MergeAcross="5" ss:StyleID="SubTitle"><Data ss:Type="String">Orden FOM 238/2003 - BOE Núm. 38 de 13 de Febrero de 2003</Data></Cell></Row>
-      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">EMPRESA CARGADORA</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">OPERADOR DE TRANSPORTE</Data></Cell></Row>
-      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String">Lasarte Cítricos S.L.</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(trip.routeOperator)}</Data></Cell></Row>
-      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String">CIF: B14800304</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String"></Data></Cell></Row>
-      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String">Ctra. Madrid-Cádiz, km 461</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String"></Data></Cell></Row>
-      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String">41400</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String"></Data></Cell></Row>
-      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">NOMBRE TRANSPORTISTA</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">DESTINATARIO</Data></Cell></Row>
-      <Row ss:Height="76"><Cell ss:MergeAcross="2" ss:StyleID="Box"><Data ss:Type="String">${escapeXml(carrierName)}</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Box"><Data ss:Type="String">${escapeXml(preset.consignee || preset.name)}</Data></Cell></Row>
-      <Row ss:Height="22"><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">MATRICULA DEL VEHICULO</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Header"><Data ss:Type="String">DATOS EXPEDICION</Data></Cell></Row>
-      <Row ss:Height="24"><Cell ss:StyleID="Label"><Data ss:Type="String">Matricula:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(trip.vehiclePlate)}</Data></Cell><Cell ss:StyleID="Label"><Data ss:Type="String">Origen:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">ECIJA</Data></Cell></Row>
-      <Row ss:Height="24"><Cell ss:StyleID="Label"><Data ss:Type="String">Tractora:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(trip.tractora)}</Data></Cell><Cell ss:StyleID="Label"><Data ss:Type="String">Destino:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(routeDestination(preset))}</Data></Cell></Row>
-      <Row ss:Height="24"><Cell ss:StyleID="Label"><Data ss:Type="String">Remolque:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(trip.remolque)}</Data></Cell><Cell ss:MergeAcross="2" ss:StyleID="Text"><Data ss:Type="String"></Data></Cell></Row>
-      <Row ss:Height="22"><Cell ss:MergeAcross="5" ss:StyleID="Header"><Data ss:Type="String">MERCANCIA</Data></Cell></Row>
-      <Row ss:Height="24"><Cell ss:StyleID="Label"><Data ss:Type="String">Fecha Carga:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(`${formatDate(trip.fechaCarga)} ${trip.horaCarga}`.trim())}</Data></Cell><Cell ss:StyleID="Label"><Data ss:Type="String">Fecha Descarga:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Text"><Data ss:Type="String">${escapeXml(`${formatDate(trip.fechaDescarga)} ${trip.horaDescarga}`.trim())}</Data></Cell></Row>
-      <Row ss:Height="22"><Cell ss:MergeAcross="4" ss:StyleID="Label"><Data ss:Type="String">Descripcion</Data></Cell><Cell ss:StyleID="Label"><Data ss:Type="String">Peso Kg.</Data></Cell></Row>
-      <Row ss:Height="78"><Cell ss:MergeAcross="4" ss:StyleID="Box"><Data ss:Type="String">${escapeXml(routeMerchandiseDescription(trip))}</Data></Cell><Cell ss:StyleID="Box"><Data ss:Type="String">${escapeXml(trip.peso)}</Data></Cell></Row>
-      <Row ss:Height="22"><Cell ss:MergeAcross="5" ss:StyleID="Header"><Data ss:Type="String">OBSERVACIONES</Data></Cell></Row>
-      <Row ss:Height="56"><Cell ss:MergeAcross="5" ss:StyleID="Box"><Data ss:Type="String">${escapeXml(trip.observaciones)}</Data></Cell></Row>
-      <Row ss:Height="60"><Cell ss:MergeAcross="1" ss:StyleID="Signature"><Data ss:Type="String">Firma Cargador:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Signature"><Data ss:Type="String">Firma Transportista:</Data></Cell><Cell ss:MergeAcross="1" ss:StyleID="Signature"><Data ss:Type="String">Firma Destinatario:</Data></Cell></Row>
-    </Table>
-    <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
-      <PageSetup><Layout x:Orientation="Portrait"/><PageMargins x:Bottom="0.35" x:Left="0.35" x:Right="0.35" x:Top="0.35"/></PageSetup>
-      <FitToPage/>
-      <Print><FitWidth>1</FitWidth><FitHeight>1</FitHeight></Print>
-    </WorksheetOptions>
-  </Worksheet>
-</Workbook>`;
-  }
-
-  const rows = [
-          ["CARTA DE PORTE CMR", ""],
-          ["N. CMR", trip.numeroCarta],
-          ["Expedidor", preset.sender],
-          ["Destinatario", preset.consignee],
-          ["Lugar carga", preset.load_place],
-          ["Pais carga", preset.load_country],
-          ["Fecha carga", formatDate(trip.fechaCarga)],
-          ["Lugar entrega", preset.delivery_place],
-          ["Pais entrega", preset.delivery_country],
-          ["Cuadro 5 - Instrucciones", trip.instructions],
-          ["Transportista", preset.carrier],
-          ["Cuadro 7 - Successive carriers", trip.successiveCarriersEnabled ? trip.successiveCarriers : ""],
-          ["Cuadro 8 - Reservas carrier", trip.carrierReservations],
-          ["Cuadro 9 - Documentos", trip.documents || [trip.documento1, trip.documento2].filter(Boolean).join(" / ")],
-          ["Cuadros 10-13 - Linea mercancia", buildGoodsLine(trip)],
-          ["Cuadro 14 - Peso bruto kg", trip.peso],
-          ["Cuadro 15 - Volumen m3", trip.volume],
-          ["Cuadro 16 - Acuerdos especiales", trip.specialAgreements],
-          ["Cuadro 17 - Otras indicaciones", trip.usefulParticulars17],
-          ["Cuadro 18 - Parte no contractual", trip.nonContractual18],
-          ["Cuadro 19 - Reembolso", trip.cashOnDelivery19],
-          ["Conductor", trip.conductor],
-          ["Tractora", trip.tractora],
-          ["Remolque", trip.remolque],
-          ["Cuadro 20", "This carriage is subject, notwithstanding any clause to the contrary, to the Convention on the Contract for the international Carriage of Goods by Road (CMR)"],
-          ["Cuadro 21 - Establecido en", `ECIJA - ${formatDate(trip.fechaCarga)}`],
-          ["Cuadro 24 - Recepcion destinatario", trip.consigneeReceipt24],
-        ];
-
-  return `<?xml version="1.0"?>
-<?mso-application progid="Excel.Sheet"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
-  xmlns:o="urn:schemas-microsoft-com:office:office"
-  xmlns:x="urn:schemas-microsoft-com:office:excel"
-  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
-  <Styles>
-    <Style ss:ID="Title"><Font ss:Bold="1" ss:Size="16"/><Interior ss:Color="#E5E7EB" ss:Pattern="Solid"/></Style>
-    <Style ss:ID="Label"><Font ss:Bold="1"/><Interior ss:Color="#F9FAFB" ss:Pattern="Solid"/></Style>
-    <Style ss:ID="Text"><Alignment ss:WrapText="1" ss:Vertical="Top"/></Style>
-  </Styles>
-  <Worksheet ss:Name="${kind === "route" ? "Hoja de ruta" : "CMR"}">
-    <Table>
-      <Column ss:Width="150"/>
-      <Column ss:Width="430"/>
-      ${rows
-        .map((row, index) => `<Row ss:Height="${index === 0 ? 28 : 42}">
-        <Cell ss:StyleID="${index === 0 ? "Title" : "Label"}"><Data ss:Type="String">${escapeXml(row[0])}</Data></Cell>
-        <Cell ss:StyleID="Text"><Data ss:Type="String">${escapeXml(row[1])}</Data></Cell>
-      </Row>`)
-        .join("")}
-    </Table>
-  </Worksheet>
-</Workbook>`;
 }
 
 function PresetPicker({
@@ -1566,7 +1207,7 @@ export default function Logistica() {
 
   const exportExactCmrPdf = async () => {
     try {
-      const pdfBytes = await generateExactCmrPdf(fixed, trip);
+      const pdfBytes = await generateExactCmrPdf(fixed, trip, CMR_COMPANY);
       downloadBlob(
         new Blob([pdfBytes], { type: "application/pdf" }),
         `cmr_${safeFilename(fixed.name)}_${Date.now()}.pdf`,
