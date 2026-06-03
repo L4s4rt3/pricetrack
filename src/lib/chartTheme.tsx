@@ -1,10 +1,10 @@
 export const C = {
   primary: "#E8EEF2",
   primaryLight: "#F8FBFF",
-  success: "#8ED9BE",
-  warning: "#C9A65A",
-  destructive: "#D06F6A",
-  info: "#A9D8EA",
+  success: "#AFC2B9",
+  warning: "#B6AA86",
+  destructive: "#B98D8B",
+  info: "#C4D5DD",
   muted: "#8F98A3",
   silver: "#C9D0D6",
   ice: "#EAF7FF",
@@ -13,9 +13,9 @@ export const C = {
 
 export const CHART_COLORS = {
   exportacion: "#E8EEF2",
-  mercado: "#A9D8EA",
-  noExportacion: "#D06F6A",
-  noComercial: "#C9A65A",
+  mercado: "#DCE8ED",
+  noExportacion: "#B98D8B",
+  noComercial: "#B6AA86",
   mujeres: "#C9D0D6",
   otro: "#8F98A3",
 };
