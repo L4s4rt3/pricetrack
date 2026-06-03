@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RotateCcw, Search } from "lucide-react";
 import { FilterField, FilterPanel } from "@/components/FilterPanel";
 import { Input } from "@/components/ui/input";
@@ -415,8 +415,20 @@ export function usePagination<T>(rows: T[], initialPageSize = 50) {
   const [pageSize, setPageSize] = useState(initialPageSize);
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(page, pageCount);
-  const pagedRows = rows.slice((safePage - 1) * pageSize, safePage * pageSize);
-  return { page: safePage, pageSize, pageCount, pagedRows, setPage, setPageSize };
+  const pagedRows = useMemo(
+    () => rows.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [rows, safePage, pageSize]
+  );
+  const setPageSizeAndReset = (nextPageSize: number) => {
+    setPageSize(nextPageSize);
+    setPage(1);
+  };
+
+  useEffect(() => {
+    setPage(1);
+  }, [rows]);
+
+  return { page: safePage, pageSize, pageCount, pagedRows, setPage, setPageSize: setPageSizeAndReset };
 }
 
 export function PaginationControls({
@@ -445,7 +457,7 @@ export function PaginationControls({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {[50, 100, 200].map((size) => (
+            {[50, 100, 200, 500, 1000].map((size) => (
               <SelectItem key={size} value={String(size)}>
                 {size}
               </SelectItem>

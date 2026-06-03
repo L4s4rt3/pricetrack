@@ -50,22 +50,24 @@ function sortRows(rows: PrecioRow[]) {
 }
 
 async function detectLatestCampaign() {
-  const latest = await supabase
+  const latestRows = await supabase
     .from("precios")
     .select("ano,mes")
     .gte("ano", MIN_CAMPAIGN_START)
     .order("ano", { ascending: false })
-    .order("mes", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order("mes", { ascending: false, nullsFirst: false })
+    .limit(200);
 
-  if (latest.error) throw latest.error;
-  if (!latest.data) return new Date().getFullYear();
+  if (latestRows.error) throw latestRows.error;
+  if (!latestRows.data?.length) return new Date().getFullYear();
 
-  return getCampaignStart({
-    year: Number(latest.data.ano ?? new Date().getFullYear()),
-    month: latest.data.mes === null || latest.data.mes === undefined ? null : Number(latest.data.mes),
-  });
+  return latestRows.data.reduce((latestCampaign, row) => {
+    const campaign = getCampaignStart({
+      year: Number(row.ano ?? new Date().getFullYear()),
+      month: row.mes === null || row.mes === undefined ? null : Number(row.mes),
+    });
+    return Math.max(latestCampaign, campaign);
+  }, MIN_CAMPAIGN_START);
 }
 
 function campaignFilter(campaign: number) {
