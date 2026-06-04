@@ -31,7 +31,7 @@ import { generateExactCmrPdf, generateExactRoutePdf } from "@/features/logistica
 import { worksheetXml } from "@/features/logistica/excelExporters";
 
 const today = new Date().toISOString().slice(0, 10);
-const logisticsDirectoryCacheVersion = "split-directories-v2";
+const logisticsDirectoryCacheVersion = "split-directories-v3";
 const presetsQueryKey = ["logistics-presets", logisticsDirectoryCacheVersion] as const;
 const templatesQueryKey = ["logistics-templates-for-presets", logisticsDirectoryCacheVersion] as const;
 const cmrClientsQueryKey = ["cmr-clients", logisticsDirectoryCacheVersion] as const;
@@ -1142,26 +1142,6 @@ export default function Logistica() {
         }
         if (loadedRouteCarriers.length === 0 && routeTemplates.length > 0) {
           loadedRouteCarriers = buildCmrCarriersFromTemplates(routeTemplates);
-        }
-      }
-
-      if (loadedCmrClients.length === 0 || loadedCmrCarriers.length === 0) {
-        const presetResult = await supabase
-          .from("logistics_presets")
-          .select("preset_key,name,sender,consignee,carrier,load_place,load_country,delivery_place,delivery_country,default_goods,default_instructions,source_files")
-          .order("name", { ascending: true })
-          .range(0, 4999);
-
-        if (presetResult.error) {
-          fallbackErrors.push(`Fichas antiguas: ${presetResult.error.message}`);
-        } else {
-          const fallbackPresets = (presetResult.data ?? []) as LogisticsPreset[];
-          if (fallbackPresets.length > 0) {
-            setPresets(fallbackPresets);
-            void writePersistentQuery(presetsQueryKey, fallbackPresets);
-            if (loadedCmrClients.length === 0) loadedCmrClients = buildCmrClientsFromPresets(fallbackPresets);
-            if (loadedCmrCarriers.length === 0) loadedCmrCarriers = buildCmrCarriersFromPresets(fallbackPresets);
-          }
         }
       }
 

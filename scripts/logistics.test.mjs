@@ -7,7 +7,7 @@ const routeDirectoryMigration = readFileSync(new URL("../supabase/migrations/202
 const populateDirectoryMigration = readFileSync(new URL("../supabase/migrations/20260604_populate_logistics_directories_from_templates.sql", import.meta.url), "utf8");
 
 test("logistics keeps CMR and route document directories separated", () => {
-  assert.match(logistica, /const logisticsDirectoryCacheVersion = "split-directories-v2"/);
+  assert.match(logistica, /const logisticsDirectoryCacheVersion = "split-directories-v3"/);
   assert.match(logistica, /const cmrClientsQueryKey = \["cmr-clients", logisticsDirectoryCacheVersion\] as const/);
   assert.match(logistica, /const cmrCarriersQueryKey = \["cmr-carriers", logisticsDirectoryCacheVersion\] as const/);
   assert.match(logistica, /const routeClientsQueryKey = \["route-clients", logisticsDirectoryCacheVersion\] as const/);
@@ -54,4 +54,13 @@ test("logistics database keeps route directories separate from CMR directories",
   assert.match(populateDirectoryMigration, /insert into public\.cmr_carriers/);
   assert.match(populateDirectoryMigration, /insert into public\.route_clients/);
   assert.match(populateDirectoryMigration, /insert into public\.route_carriers/);
+});
+
+test("logistics no longer queries legacy presets during remote directory load", () => {
+  const loadDataStart = logistica.indexOf("const loadData = async");
+  const loadDataEnd = logistica.indexOf("useEffect(() => {\n    void loadData();", loadDataStart);
+  const loadDataBody = logistica.slice(loadDataStart, loadDataEnd);
+
+  assert.doesNotMatch(loadDataBody, /\.from\("logistics_presets"\)/);
+  assert.doesNotMatch(loadDataBody, /Fichas antiguas/);
 });
