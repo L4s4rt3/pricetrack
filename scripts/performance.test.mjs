@@ -8,6 +8,7 @@ const viteConfig = readFileSync(new URL("../vite.config.ts", import.meta.url), "
 const dashboard = readFileSync(new URL("../src/pages/Dashboard.tsx", import.meta.url), "utf8");
 const dashboardSummaryHook = readFileSync(new URL("../src/hooks/useDashboardSummary.ts", import.meta.url), "utf8");
 const dashboardMigration = readFileSync(new URL("../supabase/migrations/20260603_dashboard_search_phase1.sql", import.meta.url), "utf8");
+const productionDashboardMigration = readFileSync(new URL("../supabase/migrations/20260604_dashboard_production_summary.sql", import.meta.url), "utf8");
 
 function findMatchingParen(source, openIndex) {
   let depth = 0;
@@ -75,7 +76,7 @@ test("dashboard summary does not block startup when aggregate view is missing", 
   assert.match(dashboardSummaryHook, /isMissingDashboardSummarySource/);
   assert.match(dashboardSummaryHook, /PGRST205/);
   assert.match(dashboardSummaryHook, /precios_dashboard_mensual/);
-  assert.match(dashboardSummaryHook, /if \(isMissingDashboardSummarySource\(error\)\) return \[\]/);
+  assert.match(dashboardSummaryHook, /dashboard_produccion_mensual/);
 });
 
 test("dashboard aggregate view limits to latest valid months before aggregation", () => {
@@ -96,17 +97,22 @@ test("dashboard aggregate view limits to latest valid months before aggregation"
   assert.ok(groupByIndex > finalFromJoinIndex, "GROUP BY should happen after joining monthly_keys");
 });
 
-test("dashboard exposes aggregate load errors and keeps units split across charts", () => {
-  const facturacionChart = extractChartCard(dashboard, "Facturacion por mes");
-  const kilosChart = extractChartCard(dashboard, "Kilos por mes");
-  const precioChart = extractChartCard(dashboard, "Precio medio por mes");
+test("dashboard production fallback aggregates product and pallet data independently", () => {
+  assert.match(productionDashboardMigration, /CREATE OR REPLACE VIEW public\.dashboard_produccion_mensual/i);
+  assert.match(productionDashboardMigration, /product_month AS/i);
+  assert.match(productionDashboardMigration, /palets_month AS/i);
+  assert.match(productionDashboardMigration, /lotes_month AS/i);
+  assert.match(productionDashboardMigration, /LEFT JOIN product_month USING \(month_start\)/i);
+  assert.match(productionDashboardMigration, /LEFT JOIN palets_month USING \(month_start\)/i);
+  assert.match(productionDashboardMigration, /GRANT SELECT ON public\.dashboard_produccion_mensual TO anon, authenticated/i);
+});
 
+test("dashboard exposes aggregate load errors and keeps units split across charts", () => {
   assert.match(dashboard, /isError/);
   assert.match(dashboard, /refetch/);
   assert.match(dashboard, /Reintentar/);
-  assert.match(facturacionChart, /dataKey="facturacion"/);
-  assert.doesNotMatch(facturacionChart, /dataKey="kilos"/);
-  assert.match(kilosChart, /dataKey="kilos"/);
-  assert.doesNotMatch(kilosChart, /dataKey="facturacion"/);
-  assert.match(precioChart, /dataKey="precio"/);
+  assert.match(dashboard, /dataKey=\{isProductionSummary \? "kilos" : "facturacion"\}/);
+  assert.match(dashboard, /dataKey=\{isProductionSummary \? "palets" : "kilos"\}/);
+  assert.match(dashboard, /dataKey="cajas"/);
+  assert.match(dashboard, /dataKey="precio"/);
 });

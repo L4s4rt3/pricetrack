@@ -13,6 +13,13 @@ export interface DashboardMonthSummary {
   facturacion: number;
   precio_medio: number;
   refreshed_at: string | null;
+  source: "precios" | "produccion";
+  dias?: number;
+  cajas?: number;
+  palets?: number;
+  lotes?: number;
+  productores?: number;
+  destinos?: number;
 }
 
 export const dashboardSummaryQueryKey = ["precios", "dashboard-summary", "last-6-months"] as const;
@@ -31,18 +38,37 @@ export function isMissingDashboardSummarySource(error: unknown) {
 }
 
 async function fetchDashboardSummary() {
-  const { data, error } = await supabase
+  const priceSummary = await supabase
     .from("precios_dashboard_mensual")
     .select("month_start,ano,mes,lineas,clientes,productos,kilos,facturacion,precio_medio,refreshed_at")
     .order("month_start", { ascending: false })
     .limit(6);
 
-  if (error) {
-    if (isMissingDashboardSummarySource(error)) return [];
-    throw error;
+  if (priceSummary.error && !isMissingDashboardSummarySource(priceSummary.error)) {
+    throw priceSummary.error;
   }
 
-  return [...(data ?? [])]
+  const priceRows = priceSummary.error ? [] : priceSummary.data ?? [];
+  if (priceRows.length > 0) {
+    return normalizeDashboardRows(priceRows, "precios");
+  }
+
+  const productionSummary = await supabase
+    .from("dashboard_produccion_mensual")
+    .select("month_start,ano,mes,lineas,clientes,productos,kilos,facturacion,precio_medio,refreshed_at,dias,cajas,palets,lotes,productores,destinos")
+    .order("month_start", { ascending: false })
+    .limit(6);
+
+  if (productionSummary.error) {
+    if (isMissingDashboardSummarySource(productionSummary.error)) return [];
+    throw productionSummary.error;
+  }
+
+  return normalizeDashboardRows(productionSummary.data ?? [], "produccion");
+}
+
+function normalizeDashboardRows(rows: Record<string, unknown>[], source: DashboardMonthSummary["source"]) {
+  return [...rows]
     .reverse()
     .map((row) => ({
       month_start: String(row.month_start),
@@ -55,6 +81,13 @@ async function fetchDashboardSummary() {
       facturacion: Number(row.facturacion ?? 0),
       precio_medio: Number(row.precio_medio ?? 0),
       refreshed_at: row.refreshed_at ? String(row.refreshed_at) : null,
+      source,
+      dias: Number(row.dias ?? 0),
+      cajas: Number(row.cajas ?? 0),
+      palets: Number(row.palets ?? 0),
+      lotes: Number(row.lotes ?? 0),
+      productores: Number(row.productores ?? 0),
+      destinos: Number(row.destinos ?? 0),
     })) satisfies DashboardMonthSummary[];
 }
 

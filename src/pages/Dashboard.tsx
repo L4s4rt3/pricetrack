@@ -14,24 +14,33 @@ import { BAR_STYLE, C, CHART_PANEL_CLASS, GRID, MARGIN, XAXIS, YAXIS, barFill, G
 export default function Dashboard() {
   const { data = [], isLoading, isError, error, refetch } = useDashboardSummary();
   const latest = data[data.length - 1];
+  const isProductionSummary = latest?.source === "produccion";
   const totals = data.reduce(
     (acc, row) => ({
       lineas: acc.lineas + row.lineas,
       kilos: acc.kilos + row.kilos,
       facturacion: acc.facturacion + row.facturacion,
       clientes: Math.max(acc.clientes, row.clientes),
+      cajas: acc.cajas + (row.cajas ?? 0),
+      palets: acc.palets + (row.palets ?? 0),
+      lotes: acc.lotes + (row.lotes ?? 0),
+      dias: acc.dias + (row.dias ?? 0),
     }),
-    { lineas: 0, kilos: 0, facturacion: 0, clientes: 0 },
+    { lineas: 0, kilos: 0, facturacion: 0, clientes: 0, cajas: 0, palets: 0, lotes: 0, dias: 0 },
   );
   const chartRows = data.map((row) => ({
     label: row.mes ? `${String(row.mes).padStart(2, "0")}/${String(row.ano).slice(-2)}` : String(row.ano),
     facturacion: row.facturacion,
     kilos: row.kilos,
     precio: row.precio_medio,
+    palets: row.palets ?? 0,
+    cajas: row.cajas ?? 0,
   }));
   const latestLabel = latest?.mes ? `${String(latest.mes).padStart(2, "0")}/${latest.ano}` : latest ? String(latest.ano) : "Sin datos";
   const headerSubtitle = latest
-    ? `${formatNum(totals.lineas)} lineas agregadas - ultimos ${formatNum(data.length)} meses hasta ${latestLabel}`
+    ? isProductionSummary
+      ? `${formatNum(totals.lineas)} lineas de produccion - ultimos ${formatNum(data.length)} meses hasta ${latestLabel}`
+      : `${formatNum(totals.lineas)} lineas agregadas - ultimos ${formatNum(data.length)} meses hasta ${latestLabel}`
     : "Resumen agregado de los ultimos seis meses";
 
   if (isLoading) {
@@ -86,43 +95,76 @@ export default function Dashboard() {
         </Button>
       </PageHeader>
       <section className="metric-strip">
-        <KPICard label="Precio medio" value={`${formatEur(latest?.precio_medio ?? 0)}/kg`} hint={latestLabel} icon={DollarSign} />
-        <KPICard label="Kilos producto" value={formatKg(totals.kilos)} hint="Ultimos 6 meses" icon={Package} />
-        <KPICard label="Clientes activos" value={formatNum(totals.clientes)} hint="Maximo mensual" icon={Users} />
-        <KPICard label="Facturacion producto" value={formatEur(totals.facturacion)} hint={`${formatNum(totals.lineas)} lineas`} icon={TrendingUp} />
+        {isProductionSummary ? (
+          <>
+            <KPICard label="Kilos producidos" value={formatKg(totals.kilos)} hint="Ultimos 6 meses" icon={Package} />
+            <KPICard label="Palets" value={formatNum(totals.palets)} hint={`${formatNum(totals.dias)} dias con parte`} icon={TrendingUp} />
+            <KPICard label="Clientes destino" value={formatNum(totals.clientes)} hint="Maximo mensual" icon={Users} />
+            <KPICard label="Cajas" value={formatNum(totals.cajas)} hint={`${formatNum(totals.lineas)} lineas`} icon={DollarSign} />
+          </>
+        ) : (
+          <>
+            <KPICard label="Precio medio" value={`${formatEur(latest?.precio_medio ?? 0)}/kg`} hint={latestLabel} icon={DollarSign} />
+            <KPICard label="Kilos producto" value={formatKg(totals.kilos)} hint="Ultimos 6 meses" icon={Package} />
+            <KPICard label="Clientes activos" value={formatNum(totals.clientes)} hint="Maximo mensual" icon={Users} />
+            <KPICard label="Facturacion producto" value={formatEur(totals.facturacion)} hint={`${formatNum(totals.lineas)} lineas`} icon={TrendingUp} />
+          </>
+        )}
       </section>
       <div className="grid gap-4 lg:grid-cols-3">
-        <ChartCard title="Facturacion por mes">
+        <ChartCard title={isProductionSummary ? "Kilos producidos por mes" : "Facturacion por mes"}>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={chartRows} margin={MARGIN}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" {...XAXIS} />
-              <YAxis {...YAXIS} tickFormatter={(value) => formatEur(Number(value))} />
+              <YAxis {...YAXIS} tickFormatter={(value) => (isProductionSummary ? formatKg(Number(value)) : formatEur(Number(value)))} />
               <Tooltip content={<GlassTooltip />} />
-              <Bar dataKey="facturacion" {...BAR_STYLE} fill={barFill(C.primary, 0.26)} stroke={C.primary} name="Facturacion" />
+              <Bar
+                dataKey={isProductionSummary ? "kilos" : "facturacion"}
+                {...BAR_STYLE}
+                fill={barFill(C.primary, 0.26)}
+                stroke={C.primary}
+                name={isProductionSummary ? "Kilos" : "Facturacion"}
+              />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-        <ChartCard title="Kilos por mes">
+        <ChartCard title={isProductionSummary ? "Palets por mes" : "Kilos por mes"}>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={chartRows} margin={MARGIN}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" {...XAXIS} />
-              <YAxis {...YAXIS} tickFormatter={(value) => formatKg(Number(value))} />
+              <YAxis {...YAXIS} tickFormatter={(value) => (isProductionSummary ? formatNum(Number(value)) : formatKg(Number(value)))} />
               <Tooltip content={<GlassTooltip />} />
-              <Bar dataKey="kilos" {...BAR_STYLE} fill={barFill(C.success, 0.22)} stroke={C.success} name="Kilos" />
+              <Bar
+                dataKey={isProductionSummary ? "palets" : "kilos"}
+                {...BAR_STYLE}
+                fill={barFill(C.success, 0.22)}
+                stroke={C.success}
+                name={isProductionSummary ? "Palets" : "Kilos"}
+              />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
-        <ChartCard title="Precio medio por mes">
+        <ChartCard title={isProductionSummary ? "Cajas por mes" : "Precio medio por mes"}>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartRows} margin={MARGIN}>
-              <CartesianGrid {...GRID} />
-              <XAxis dataKey="label" {...XAXIS} />
-              <YAxis {...YAXIS} tickFormatter={(value) => formatEur(Number(value))} />
-              <Tooltip content={<GlassTooltip />} />
-              <Line dataKey="precio" stroke={C.primary} strokeWidth={2.5} dot={false} name="Precio medio" />
-            </LineChart>
+            {isProductionSummary ? (
+              <BarChart data={chartRows} margin={MARGIN}>
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="label" {...XAXIS} />
+                <YAxis {...YAXIS} tickFormatter={(value) => formatNum(Number(value))} />
+                <Tooltip content={<GlassTooltip />} />
+                <Bar dataKey="cajas" {...BAR_STYLE} fill={barFill(C.primary, 0.18)} stroke={C.primary} name="Cajas" />
+              </BarChart>
+            ) : (
+              <LineChart data={chartRows} margin={MARGIN}>
+                <CartesianGrid {...GRID} />
+                <XAxis dataKey="label" {...XAXIS} />
+                <YAxis {...YAXIS} tickFormatter={(value) => formatEur(Number(value))} />
+                <Tooltip content={<GlassTooltip />} />
+                <Line dataKey="precio" stroke={C.primary} strokeWidth={2.5} dot={false} name="Precio medio" />
+              </LineChart>
+            )}
           </ResponsiveContainer>
         </ChartCard>
       </div>
