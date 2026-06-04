@@ -42,6 +42,8 @@ export const XAXIS = {
   tick: { fill: "hsl(var(--muted-foreground))", letterSpacing: 0 },
   axisLine: false,
   tickLine: false,
+  tickMargin: 10,
+  minTickGap: 10,
 };
 
 export const YAXIS = {
@@ -49,10 +51,11 @@ export const YAXIS = {
   tick: { fill: "hsl(var(--muted-foreground))", letterSpacing: 0 },
   axisLine: false,
   tickLine: false,
-  width: 40,
+  tickMargin: 8,
+  width: 76,
 };
 
-export const MARGIN = { top: 12, right: 12, bottom: 6, left: 4 };
+export const MARGIN = { top: 16, right: 24, bottom: 18, left: 10 };
 
 export const BAR_STYLE = {
   radius: [8, 8, 3, 3] as [number, number, number, number],

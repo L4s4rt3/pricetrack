@@ -1652,6 +1652,23 @@ body {
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
   contain: layout style paint;
+}
+
+.glass,
+.glass-strong,
+.glass-lg,
+.glass-card,
+.content-panel,
+.filter-panel,
+.section-toolbar,
+.chart-panel,
+.chart-card,
+.data-table-shell,
+.empty-state,
+.page-header,
+.topbar-glass,
+.liquid-menu,
+.liquid-toast {
   transform: translateZ(0);
 }
 
@@ -2029,6 +2046,15 @@ body {
   animation-timing-function: var(--liquid-spring) !important;
 }
 
+.liquid-command-dialog {
+  left: 50% !important;
+  top: 50% !important;
+  width: min(calc(100vw - 2rem), 42rem) !important;
+  max-width: none !important;
+  max-height: min(520px, calc(100vh - 2rem));
+  transform: translate3d(-50%, -50%, 0) !important;
+}
+
 .liquid-command-input {
   background:
     linear-gradient(180deg, hsl(0 0% 100% / 0.18), transparent),
@@ -2089,11 +2115,37 @@ body {
 .chart-panel {
   overflow: visible;
   contain: layout style;
+  padding: 1rem 1.1rem 1.05rem;
+}
+
+.chart-card {
+  overflow: visible !important;
 }
 
 .chart-panel .recharts-wrapper,
 .chart-panel .recharts-surface {
   overflow: visible;
+}
+
+.chart-panel .recharts-yAxis .recharts-cartesian-axis-tick text,
+.chart-panel .recharts-xAxis .recharts-cartesian-axis-tick text {
+  dominant-baseline: central;
+}
+
+.data-table-shell td,
+.data-table-shell th {
+  min-width: 0;
+}
+
+.data-table-shell td.tabular-nums,
+.data-table-shell th.tabular-nums,
+.data-table-shell td.text-right,
+.data-table-shell th.text-right,
+.data-table-shell td.text-end,
+.data-table-shell th.text-end {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
 }
 
 @media (max-width: 768px) {
