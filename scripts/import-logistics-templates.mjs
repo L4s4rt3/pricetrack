@@ -12,6 +12,7 @@ const SUPABASE_ANON_KEY =
   process.env.VITE_SUPABASE_ANON_KEY ??
   "sb_publishable_J8iZ0bqsSbWkkNXi3fv5WQ_LPha7MRc";
 const BATCH_SIZE = 6;
+const MAX_RETRIES = 4;
 
 const mimeTypes = {
   ".pdf": "application/pdf",
@@ -80,17 +81,33 @@ async function buildEntries() {
 
 async function uploadEntry(supabase, entry) {
   const buffer = await readFile(entry.filePath);
-  const { error: uploadError } = await supabase.storage.from(BUCKET).upload(entry.storage_path, buffer, {
-    contentType: entry.contentType,
-    upsert: true,
-  });
+  const { error: uploadError } = await withRetries(() =>
+    supabase.storage.from(BUCKET).upload(entry.storage_path, buffer, {
+      contentType: entry.contentType,
+      upsert: true,
+    }),
+  );
   if (uploadError) throw new Error(`${entry.name}: ${uploadError.message}`);
 
   const { contentType, filePath, ...row } = entry;
-  const { error: upsertError } = await supabase.from("logistics_templates").upsert(row, {
-    onConflict: "storage_path",
-  });
+  const { error: upsertError } = await withRetries(() =>
+    supabase.from("logistics_templates").upsert(row, {
+      onConflict: "storage_path",
+    }),
+  );
   if (upsertError) throw new Error(`${entry.name}: ${upsertError.message}`);
+}
+
+async function withRetries(operation) {
+  let lastResult;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt += 1) {
+    lastResult = await operation();
+    if (!lastResult.error) return lastResult;
+    const retryable = /bad gateway|timeout|network|fetch failed|rate limit/i.test(lastResult.error.message ?? "");
+    if (!retryable || attempt === MAX_RETRIES - 1) return lastResult;
+    await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
+  }
+  return lastResult;
 }
 
 async function main() {
