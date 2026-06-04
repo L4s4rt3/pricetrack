@@ -17,6 +17,19 @@ export interface DashboardMonthSummary {
 
 export const dashboardSummaryQueryKey = ["precios", "dashboard-summary", "last-6-months"] as const;
 
+export function isMissingDashboardSummarySource(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+
+  const maybeError = error as { code?: string; message?: string };
+  const message = maybeError.message ?? "";
+
+  return (
+    maybeError.code === "42P01" ||
+    maybeError.code === "PGRST205" ||
+    /precios_dashboard_mensual|schema cache|does not exist|could not find the table/i.test(message)
+  );
+}
+
 async function fetchDashboardSummary() {
   const { data, error } = await supabase
     .from("precios_dashboard_mensual")
@@ -24,7 +37,10 @@ async function fetchDashboardSummary() {
     .order("month_start", { ascending: false })
     .limit(6);
 
-  if (error) throw error;
+  if (error) {
+    if (isMissingDashboardSummarySource(error)) return [];
+    throw error;
+  }
 
   return [...(data ?? [])]
     .reverse()

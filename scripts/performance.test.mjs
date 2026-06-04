@@ -71,6 +71,13 @@ test("dashboard aggregate summary stays in precios invalidation scope", () => {
   assert.match(dashboardSummaryHook, /dashboardSummaryQueryKey\s*=\s*\[\s*"precios",\s*"dashboard-summary",\s*"last-6-months"\s*\]\s+as const/);
 });
 
+test("dashboard summary does not block startup when aggregate view is missing", () => {
+  assert.match(dashboardSummaryHook, /isMissingDashboardSummarySource/);
+  assert.match(dashboardSummaryHook, /PGRST205/);
+  assert.match(dashboardSummaryHook, /precios_dashboard_mensual/);
+  assert.match(dashboardSummaryHook, /if \(isMissingDashboardSummarySource\(error\)\) return \[\]/);
+});
+
 test("dashboard aggregate view limits to latest valid months before aggregation", () => {
   const monthlyKeys = extractMonthlyKeysCte(dashboardMigration);
   const finalSelectStart = dashboardMigration.search(/SELECT\s+monthly_keys\.month_start/i);

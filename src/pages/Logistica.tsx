@@ -35,6 +35,8 @@ const presetsQueryKey = ["logistics-presets"] as const;
 const templatesQueryKey = ["logistics-templates-for-presets"] as const;
 const cmrClientsQueryKey = ["cmr-clients"] as const;
 const cmrCarriersQueryKey = ["cmr-carriers"] as const;
+const routeClientsQueryKey = ["route-clients"] as const;
+const routeCarriersQueryKey = ["route-carriers"] as const;
 
 const CMR_COMPANY = "Lasarte Cítricos S.L.\nCIF: B14800304\nCtra. Madrid-Cádiz, km 461\n41400";
 
@@ -957,18 +959,35 @@ function RouteEntryTable({
 export default function Logistica() {
   const [presets, setPresets] = useState<LogisticsPreset[]>([]);
   const [templates, setTemplates] = useState<LogisticsTemplateRow[]>([]);
-  const [clients, setClients] = useState<CmrClient[]>([]);
-  const [carriers, setCarriers] = useState<CmrCarrier[]>([]);
+  const [cmrClients, setCmrClients] = useState<CmrClient[]>([]);
+  const [cmrCarriers, setCmrCarriers] = useState<CmrCarrier[]>([]);
+  const [routeClients, setRouteClients] = useState<CmrClient[]>([]);
+  const [routeCarriers, setRouteCarriers] = useState<CmrCarrier[]>([]);
   const [documentMode, setDocumentMode] = useState<DocumentKind>("cmr");
-  const [clientQuery, setClientQuery] = useState("");
-  const [carrierQuery, setCarrierQuery] = useState("");
-  const [selectedClientKey, setSelectedClientKey] = useState("");
-  const [selectedCarrierKey, setSelectedCarrierKey] = useState("");
+  const [clientQueries, setClientQueries] = useState<Record<DocumentKind, string>>({ cmr: "", route: "" });
+  const [carrierQueries, setCarrierQueries] = useState<Record<DocumentKind, string>>({ cmr: "", route: "" });
+  const [selectedClientKeys, setSelectedClientKeys] = useState<Record<DocumentKind, string>>({ cmr: "", route: "" });
+  const [selectedCarrierKeys, setSelectedCarrierKeys] = useState<Record<DocumentKind, string>>({ cmr: "", route: "" });
   const [selectedPresetKey, setSelectedPresetKey] = useState(emptyPreset.preset_key);
   const [fixed, setFixed] = useState<LogisticsPreset>(emptyPreset);
   const [trip, setTrip] = useState<TripFields>(emptyTrip);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const clients = documentMode === "cmr" ? cmrClients : routeClients;
+  const carriers = documentMode === "cmr" ? cmrCarriers : routeCarriers;
+  const clientQuery = clientQueries[documentMode];
+  const carrierQuery = carrierQueries[documentMode];
+  const selectedClientKey = selectedClientKeys[documentMode];
+  const selectedCarrierKey = selectedCarrierKeys[documentMode];
+  const setCurrentClientQuery = (value: string) =>
+    setClientQueries((current) => ({ ...current, [documentMode]: value }));
+  const setCurrentCarrierQuery = (value: string) =>
+    setCarrierQueries((current) => ({ ...current, [documentMode]: value }));
+  const setCurrentSelectedClientKey = (value: string) =>
+    setSelectedClientKeys((current) => ({ ...current, [documentMode]: value }));
+  const setCurrentSelectedCarrierKey = (value: string) =>
+    setSelectedCarrierKeys((current) => ({ ...current, [documentMode]: value }));
 
   const derivedPresets = useMemo(() => {
     const map = new Map<string, LogisticsPreset>();
@@ -1016,13 +1035,22 @@ export default function Logistica() {
       if (!force) {
         const cachedPresets = await readPersistentQuery<LogisticsPreset[]>(presetsQueryKey);
         const cachedTemplates = await readPersistentQuery<LogisticsTemplateRow[]>(templatesQueryKey);
-        const cachedClients = await readPersistentQuery<CmrClient[]>(cmrClientsQueryKey);
-        const cachedCarriers = await readPersistentQuery<CmrCarrier[]>(cmrCarriersQueryKey);
+        const cachedCmrClients = await readPersistentQuery<CmrClient[]>(cmrClientsQueryKey);
+        const cachedCmrCarriers = await readPersistentQuery<CmrCarrier[]>(cmrCarriersQueryKey);
+        const cachedRouteClients = await readPersistentQuery<CmrClient[]>(routeClientsQueryKey);
+        const cachedRouteCarriers = await readPersistentQuery<CmrCarrier[]>(routeCarriersQueryKey);
         if (cachedPresets) setPresets(cachedPresets.data);
         if (cachedTemplates) setTemplates(cachedTemplates.data);
-        if (cachedClients?.data?.length && cachedCarriers?.data?.length) {
-          setClients(cachedClients.data);
-          setCarriers(cachedCarriers.data);
+        if (
+          cachedCmrClients?.data?.length &&
+          cachedCmrCarriers?.data?.length &&
+          cachedRouteClients?.data?.length &&
+          cachedRouteCarriers?.data?.length
+        ) {
+          setCmrClients(cachedCmrClients.data);
+          setCmrCarriers(cachedCmrCarriers.data);
+          setRouteClients(cachedRouteClients.data);
+          setRouteCarriers(cachedRouteCarriers.data);
           return;
         }
       } else {
@@ -1030,9 +1058,11 @@ export default function Logistica() {
         await removePersistentQuery(templatesQueryKey);
         await removePersistentQuery(cmrClientsQueryKey);
         await removePersistentQuery(cmrCarriersQueryKey);
+        await removePersistentQuery(routeClientsQueryKey);
+        await removePersistentQuery(routeCarriersQueryKey);
       }
 
-      const [clientResult, carrierResult] = await Promise.all([
+      const [clientResult, carrierResult, templateResult] = await Promise.all([
         supabase
           .from("cmr_clients")
           .select("client_key,name,consignee,transitario,country,default_goods,is_edeka,occurrences")
@@ -1041,6 +1071,11 @@ export default function Logistica() {
           .from("cmr_carriers")
           .select("carrier_key,name,details,country,occurrences")
           .order("occurrences", { ascending: false }),
+        supabase
+          .from("logistics_templates")
+          .select("kind,name,original_path,storage_path")
+          .order("name", { ascending: true })
+          .range(0, 4999),
       ]);
 
       const blockingErrors = [
@@ -1052,10 +1087,37 @@ export default function Logistica() {
         throw new Error(blockingErrors.join(" | "));
       }
 
-      let loadedClients = (clientResult.data ?? []) as CmrClient[];
-      let loadedCarriers = (carrierResult.data ?? []) as CmrCarrier[];
-      if (loadedClients.length === 0 || loadedCarriers.length === 0) {
-        const fallbackErrors: string[] = [];
+      const fallbackErrors: string[] = [];
+      let loadedCmrClients = (clientResult.data ?? []) as CmrClient[];
+      let loadedCmrCarriers = (carrierResult.data ?? []) as CmrCarrier[];
+      let loadedRouteClients: CmrClient[] = [];
+      let loadedRouteCarriers: CmrCarrier[] = [];
+
+      if (templateResult.error) {
+        fallbackErrors.push(`Plantillas: ${templateResult.error.message}`);
+      } else {
+        const loadedTemplates = (templateResult.data ?? []) as LogisticsTemplateRow[];
+        const cmrTemplates = loadedTemplates.filter((template) => template.kind === "cmr");
+        const routeTemplates = loadedTemplates.filter((template) => template.kind === "route");
+
+        if (loadedTemplates.length > 0) {
+          setTemplates(loadedTemplates);
+          void writePersistentQuery(templatesQueryKey, loadedTemplates);
+        }
+
+        if (loadedCmrClients.length === 0 && cmrTemplates.length > 0) {
+          loadedCmrClients = buildCmrClientsFromTemplates(cmrTemplates);
+        }
+        if (loadedCmrCarriers.length === 0 && cmrTemplates.length > 0) {
+          loadedCmrCarriers = buildCmrCarriersFromTemplates(cmrTemplates);
+        }
+        if (routeTemplates.length > 0) {
+          loadedRouteClients = buildCmrClientsFromTemplates(routeTemplates);
+          loadedRouteCarriers = buildCmrCarriersFromTemplates(routeTemplates);
+        }
+      }
+
+      if (loadedCmrClients.length === 0 || loadedCmrCarriers.length === 0) {
         const presetResult = await supabase
           .from("logistics_presets")
           .select("preset_key,name,sender,consignee,carrier,load_place,load_country,delivery_place,delivery_country,default_goods,default_instructions,source_files")
@@ -1069,49 +1131,31 @@ export default function Logistica() {
           if (fallbackPresets.length > 0) {
             setPresets(fallbackPresets);
             void writePersistentQuery(presetsQueryKey, fallbackPresets);
-            if (loadedClients.length === 0) loadedClients = buildCmrClientsFromPresets(fallbackPresets);
-            if (loadedCarriers.length === 0) loadedCarriers = buildCmrCarriersFromPresets(fallbackPresets);
+            if (loadedCmrClients.length === 0) loadedCmrClients = buildCmrClientsFromPresets(fallbackPresets);
+            if (loadedCmrCarriers.length === 0) loadedCmrCarriers = buildCmrCarriersFromPresets(fallbackPresets);
           }
-        }
-
-        if (loadedClients.length === 0 || loadedCarriers.length === 0) {
-          const templateResult = await supabase
-            .from("logistics_templates")
-            .select("kind,name,original_path,storage_path")
-            .order("name", { ascending: true })
-            .range(0, 4999);
-
-          if (templateResult.error) {
-            fallbackErrors.push(`Plantillas: ${templateResult.error.message}`);
-          } else {
-            const fallbackTemplates = (templateResult.data ?? []) as LogisticsTemplateRow[];
-            if (fallbackTemplates.length > 0) {
-              setTemplates(fallbackTemplates);
-              void writePersistentQuery(templatesQueryKey, fallbackTemplates);
-              if (loadedClients.length === 0) loadedClients = buildCmrClientsFromTemplates(fallbackTemplates);
-              if (loadedCarriers.length === 0) loadedCarriers = buildCmrCarriersFromTemplates(fallbackTemplates);
-            }
-          }
-        }
-
-        if (loadedClients.length === 0 || loadedCarriers.length === 0) {
-          if (loadedClients.length === 0) loadedClients = buildFallbackClients();
-          if (loadedCarriers.length === 0) loadedCarriers = buildFallbackCarriers();
-        }
-
-        if (loadedClients.length === 0 || loadedCarriers.length === 0) {
-          if (loadedClients.length === 0) loadedClients = [manualClientFallback];
-          if (loadedCarriers.length === 0) loadedCarriers = [manualCarrierFallback];
-        }
-
-        if (fallbackErrors.length > 0) {
-          toast.warning(`Logistica cargada con datos de respaldo. ${fallbackErrors.join(" | ")}`);
         }
       }
-      setClients(loadedClients);
-      setCarriers(loadedCarriers);
-      void writePersistentQuery(cmrClientsQueryKey, loadedClients);
-      void writePersistentQuery(cmrCarriersQueryKey, loadedCarriers);
+
+      if (loadedCmrClients.length === 0) loadedCmrClients = buildFallbackClients();
+      if (loadedCmrCarriers.length === 0) loadedCmrCarriers = buildFallbackCarriers();
+      if (loadedCmrClients.length === 0) loadedCmrClients = [manualClientFallback];
+      if (loadedCmrCarriers.length === 0) loadedCmrCarriers = [manualCarrierFallback];
+      if (loadedRouteClients.length === 0) loadedRouteClients = [{ ...manualClientFallback, client_key: "route-manual" }];
+      if (loadedRouteCarriers.length === 0) loadedRouteCarriers = [{ ...manualCarrierFallback, carrier_key: "route-manual" }];
+
+      if (fallbackErrors.length > 0) {
+        toast.warning(`Logistica cargada con datos de respaldo. ${fallbackErrors.join(" | ")}`);
+      }
+
+      setCmrClients(loadedCmrClients);
+      setCmrCarriers(loadedCmrCarriers);
+      setRouteClients(loadedRouteClients);
+      setRouteCarriers(loadedRouteCarriers);
+      void writePersistentQuery(cmrClientsQueryKey, loadedCmrClients);
+      void writePersistentQuery(cmrCarriersQueryKey, loadedCmrCarriers);
+      void writePersistentQuery(routeClientsQueryKey, loadedRouteClients);
+      void writePersistentQuery(routeCarriersQueryKey, loadedRouteCarriers);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las fichas de logistica.");
     } finally {
@@ -1162,6 +1206,23 @@ export default function Logistica() {
     }));
   }, [selectedCarrier]);
 
+  useEffect(() => {
+    if (!selectedClientKey) {
+      setFixed((current) => ({
+        ...current,
+        name: "",
+        consignee: "",
+        delivery_place: "",
+        delivery_country: "",
+      }));
+      setTrip((current) => ({ ...current, routeDescription: "" }));
+    }
+    if (!selectedCarrierKey) {
+      setFixed((current) => ({ ...current, carrier: "" }));
+      setTrip((current) => ({ ...current, routeCarrierName: "" }));
+    }
+  }, [documentMode, selectedClientKey, selectedCarrierKey]);
+
   const updateFixed = (key: keyof LogisticsPreset, value: string) => {
     setFixed((current) => ({ ...current, [key]: value }));
   };
@@ -1171,8 +1232,8 @@ export default function Logistica() {
   };
 
   const clearSelectedClient = () => {
-    setSelectedClientKey("");
-    setClientQuery("");
+    setCurrentSelectedClientKey("");
+    setCurrentClientQuery("");
     setFixed((current) => ({
       ...current,
       name: "",
@@ -1188,8 +1249,8 @@ export default function Logistica() {
   };
 
   const clearSelectedCarrier = () => {
-    setSelectedCarrierKey("");
-    setCarrierQuery("");
+    setCurrentSelectedCarrierKey("");
+    setCurrentCarrierQuery("");
     setFixed((current) => ({
       ...current,
       carrier: "",
@@ -1317,7 +1378,7 @@ export default function Logistica() {
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={clientQuery}
-                  onChange={(event) => setClientQuery(event.target.value)}
+                  onChange={(event) => setCurrentClientQuery(event.target.value)}
                   className="glass-field pl-9"
                   placeholder="Buscar cliente..."
                 />
@@ -1328,8 +1389,8 @@ export default function Logistica() {
                     key={client.client_key}
                     type="button"
                     onClick={() => {
-                      setSelectedClientKey(client.client_key);
-                      setClientQuery(client.name);
+                      setCurrentSelectedClientKey(client.client_key);
+                      setCurrentClientQuery(client.name);
                     }}
                     className={`w-full rounded-lg border p-3 text-left transition ${
                       selectedClientKey === client.client_key
@@ -1363,7 +1424,7 @@ export default function Logistica() {
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={carrierQuery}
-                  onChange={(event) => setCarrierQuery(event.target.value)}
+                  onChange={(event) => setCurrentCarrierQuery(event.target.value)}
                   className="glass-field pl-9"
                   placeholder="Buscar transportista..."
                 />
@@ -1374,8 +1435,8 @@ export default function Logistica() {
                     key={carrier.carrier_key}
                     type="button"
                     onClick={() => {
-                      setSelectedCarrierKey(carrier.carrier_key);
-                      setCarrierQuery(carrier.name);
+                      setCurrentSelectedCarrierKey(carrier.carrier_key);
+                      setCurrentCarrierQuery(carrier.name);
                     }}
                     className={`w-full rounded-lg border p-3 text-left transition ${
                       selectedCarrierKey === carrier.carrier_key
