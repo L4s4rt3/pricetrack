@@ -359,6 +359,16 @@ function describeLoadError(label: string, error: unknown) {
   return `${label}: ${String(error)}`;
 }
 
+function isMissingLogisticsTable(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as { code?: string; message?: string };
+  return (
+    candidate.code === "42P01" ||
+    candidate.code === "PGRST205" ||
+    /schema cache|could not find the table|does not exist/i.test(candidate.message ?? "")
+  );
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -1062,13 +1072,21 @@ export default function Logistica() {
         await removePersistentQuery(routeCarriersQueryKey);
       }
 
-      const [clientResult, carrierResult, templateResult] = await Promise.all([
+      const [clientResult, carrierResult, routeClientResult, routeCarrierResult, templateResult] = await Promise.all([
         supabase
           .from("cmr_clients")
           .select("client_key,name,consignee,transitario,country,default_goods,is_edeka,occurrences")
           .order("occurrences", { ascending: false }),
         supabase
           .from("cmr_carriers")
+          .select("carrier_key,name,details,country,occurrences")
+          .order("occurrences", { ascending: false }),
+        supabase
+          .from("route_clients")
+          .select("client_key,name,consignee,transitario,country,default_goods,is_edeka,occurrences")
+          .order("occurrences", { ascending: false }),
+        supabase
+          .from("route_carriers")
           .select("carrier_key,name,details,country,occurrences")
           .order("occurrences", { ascending: false }),
         supabase
@@ -1090,8 +1108,15 @@ export default function Logistica() {
       const fallbackErrors: string[] = [];
       let loadedCmrClients = (clientResult.data ?? []) as CmrClient[];
       let loadedCmrCarriers = (carrierResult.data ?? []) as CmrCarrier[];
-      let loadedRouteClients: CmrClient[] = [];
-      let loadedRouteCarriers: CmrCarrier[] = [];
+      let loadedRouteClients = routeClientResult.error ? [] : ((routeClientResult.data ?? []) as CmrClient[]);
+      let loadedRouteCarriers = routeCarrierResult.error ? [] : ((routeCarrierResult.data ?? []) as CmrCarrier[]);
+
+      if (routeClientResult.error && !isMissingLogisticsTable(routeClientResult.error)) {
+        fallbackErrors.push(`Clientes hoja de ruta: ${routeClientResult.error.message}`);
+      }
+      if (routeCarrierResult.error && !isMissingLogisticsTable(routeCarrierResult.error)) {
+        fallbackErrors.push(`Transportistas hoja de ruta: ${routeCarrierResult.error.message}`);
+      }
 
       if (templateResult.error) {
         fallbackErrors.push(`Plantillas: ${templateResult.error.message}`);
@@ -1111,8 +1136,10 @@ export default function Logistica() {
         if (loadedCmrCarriers.length === 0 && cmrTemplates.length > 0) {
           loadedCmrCarriers = buildCmrCarriersFromTemplates(cmrTemplates);
         }
-        if (routeTemplates.length > 0) {
+        if (loadedRouteClients.length === 0 && routeTemplates.length > 0) {
           loadedRouteClients = buildCmrClientsFromTemplates(routeTemplates);
+        }
+        if (loadedRouteCarriers.length === 0 && routeTemplates.length > 0) {
           loadedRouteCarriers = buildCmrCarriersFromTemplates(routeTemplates);
         }
       }

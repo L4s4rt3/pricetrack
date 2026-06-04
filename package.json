@@ -10,6 +10,8 @@
     "test:logistics": "node --test scripts/logistics.test.mjs",
     "test:search": "node --test scripts/search.test.mjs",
     "import:logistics": "node scripts/import-logistics-templates.mjs",
+    "logistics:directories:summary": "node scripts/build-logistics-directory-import.mjs --summary",
+    "logistics:directories:sql": "node scripts/build-logistics-directory-import.mjs --compact-sql",
     "build": "vite build",
     "preview": "vite preview"
   },
