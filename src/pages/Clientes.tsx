@@ -62,7 +62,7 @@ export default function Clientes() {
           <Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar cliente" />
         </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+      <div className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
         <Card className="glass-accented">
           <CardHeader><CardTitle className="text-lg">Top clientes</CardTitle></CardHeader>
           <CardContent>
@@ -82,7 +82,7 @@ export default function Clientes() {
           <CardHeader><CardTitle className="text-lg">Facturacion ventas</CardTitle></CardHeader>
           <CardContent>
             <div className={CHART_PANEL_CLASS}>
-              <ResponsiveContainer width="100%" height={360}>
+              <ResponsiveContainer width="100%" height={430}>
                 <BarChart data={top} layout="vertical" margin={MARGIN}>
                   <CartesianGrid {...GRID} horizontal={false} />
                   <XAxis type="number" {...XAXIS} tickFormatter={(v) => formatEur(Number(v))} />
@@ -98,7 +98,7 @@ export default function Clientes() {
       {selectedName && (
         <Card className="glass-accented">
           <CardHeader><CardTitle className="text-lg">Detalle · {selectedName}</CardTitle></CardHeader>
-          <CardContent className="grid gap-4 lg:grid-cols-[1fr_1.1fr]">
+          <CardContent className="grid gap-5 xl:grid-cols-[1.2fr_1fr]">
             <DataTable
               rows={[
                 ...selectedRows.slice(0, 16).map((row) => ({
@@ -132,7 +132,7 @@ export default function Clientes() {
               ]}
             />
             <div className={CHART_PANEL_CLASS}>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={360}>
                 <LineChart data={selectedHistory} margin={MARGIN}>
                   <CartesianGrid {...GRID} />
                   <XAxis dataKey="label" {...XAXIS} />

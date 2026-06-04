@@ -95,7 +95,7 @@ export default function Comparar() {
         <CardHeader><CardTitle className="text-lg">Precio mensual comparado</CardTitle></CardHeader>
         <CardContent>
           <div className={CHART_PANEL_CLASS}>
-            <ResponsiveContainer width="100%" height={340}>
+            <ResponsiveContainer width="100%" height={430}>
               <LineChart data={chartData} margin={MARGIN}>
                 <CartesianGrid {...GRID} />
                 <XAxis dataKey="label" {...XAXIS} />

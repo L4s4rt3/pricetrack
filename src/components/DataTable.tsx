@@ -57,12 +57,12 @@ export function DataTable<T>({ rows, columns, empty = "Sin datos", className, ge
   return (
     <div className={cn("data-table-shell relative isolate overflow-hidden rounded-[8px] border border-[hsl(var(--glass-border))] bg-[hsl(var(--glass-bg))]", className)}>
       <div ref={scrollRef} className="table-scroll max-h-[min(680px,calc(100vh-18rem))] overflow-auto">
-        <table className="data-table w-full min-w-[760px] table-fixed border-separate border-spacing-0 text-left text-sm">
+        <table className="data-table w-full min-w-[980px] table-fixed border-separate border-spacing-0 text-left text-sm">
           <thead className="table-head text-[10px] uppercase tracking-normal text-muted-foreground">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
-                  <th key={header.id} className={cn("px-4 py-3 font-semibold leading-tight", (header.column.columnDef.meta as DataTableMeta | undefined)?.className)}>
+                  <th key={header.id} className={cn("px-5 py-3.5 font-semibold leading-tight", (header.column.columnDef.meta as DataTableMeta | undefined)?.className)}>
                     <span>{header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}</span>
                   </th>
                 ))}
@@ -103,7 +103,7 @@ export function DataTable<T>({ rows, columns, empty = "Sin datos", className, ge
                   style={virtualStyle}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className={cn("px-4 py-3 align-top leading-snug", (cell.column.columnDef.meta as DataTableMeta | undefined)?.className)}>
+                    <td key={cell.id} className={cn("px-5 py-3.5 align-top leading-snug", (cell.column.columnDef.meta as DataTableMeta | undefined)?.className)}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </td>
                   ))}

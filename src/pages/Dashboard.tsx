@@ -53,7 +53,7 @@ export default function Dashboard() {
           ))}
         </div>
         <Skeleton className="h-32 rounded-lg" />
-        <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
+        <div className="grid gap-5 xl:grid-cols-2">
           <Skeleton className="h-[380px] rounded-lg" />
           <Skeleton className="h-[380px] rounded-lg" />
         </div>
@@ -111,9 +111,9 @@ export default function Dashboard() {
           </>
         )}
       </section>
-      <div className="grid gap-4 lg:grid-cols-3">
-        <ChartCard title={isProductionSummary ? "Kilos producidos por mes" : "Facturacion por mes"}>
-          <ResponsiveContainer width="100%" height={300}>
+      <div className="grid gap-5 xl:grid-cols-2">
+        <ChartCard title={isProductionSummary ? "Kilos producidos por mes" : "Facturacion por mes"} className="xl:col-span-2">
+          <ResponsiveContainer width="100%" height={390}>
             <BarChart data={chartRows} margin={MARGIN}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" {...XAXIS} />
@@ -130,7 +130,7 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </ChartCard>
         <ChartCard title={isProductionSummary ? "Palets por mes" : "Kilos por mes"}>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={350}>
             <BarChart data={chartRows} margin={MARGIN}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" {...XAXIS} />
@@ -147,7 +147,7 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </ChartCard>
         <ChartCard title={isProductionSummary ? "Cajas por mes" : "Precio medio por mes"}>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={350}>
             {isProductionSummary ? (
               <BarChart data={chartRows} margin={MARGIN}>
                 <CartesianGrid {...GRID} />
@@ -172,9 +172,9 @@ export default function Dashboard() {
   );
 }
 
-function ChartCard({ title, children }: { title: string; children: ReactNode }) {
+function ChartCard({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
   return (
-    <Card className="chart-card glass-accented overflow-hidden">
+    <Card className={`chart-card glass-accented overflow-hidden ${className ?? ""}`}>
       <CardHeader className="pb-3">
         <span className="panel-kicker">Analisis</span>
         <CardTitle className="text-lg">{title}</CardTitle>

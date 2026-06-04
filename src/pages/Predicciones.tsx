@@ -68,7 +68,7 @@ export default function Predicciones() {
         <CardHeader><CardTitle className="text-lg">Forecast producto 12 meses</CardTitle></CardHeader>
         <CardContent>
           <div className={CHART_PANEL_CLASS}>
-            <ResponsiveContainer width="100%" height={340}>
+            <ResponsiveContainer width="100%" height={430}>
               <ComposedChart data={chartData} margin={MARGIN}>
                 <CartesianGrid {...GRID} />
                 <XAxis dataKey="label" {...XAXIS} />

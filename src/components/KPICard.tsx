@@ -23,25 +23,27 @@ export function KPICard({ label, value, hint, icon: Icon, trend, className }: KP
 
   return (
     <Card className={cn("metric-card glass-lift overflow-hidden", className)}>
-      <CardContent className="relative p-5">
+      <CardContent className="relative min-h-[8.25rem] p-5">
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/[0.7] to-transparent" />
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-normal text-muted-foreground">{label}</p>
-            <p className="mt-2 text-[clamp(1.35rem,2vw,1.9rem)] font-semibold leading-none tracking-normal tabular-nums">{value}</p>
-            {hint && (
-              <div className={cn("mt-2 flex items-center gap-1 text-xs font-semibold leading-tight", trendColor)}>
-                {TrendIcon && <TrendIcon className="h-3.5 w-3.5" />}
-                <span>{hint}</span>
+        <div className="flex min-h-full flex-col justify-between gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <p className="min-w-0 text-[11px] font-semibold uppercase leading-snug tracking-normal text-muted-foreground">{label}</p>
+            {Icon && (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-primary/15 bg-primary/[0.08] text-primary shadow-[inset_0_1px_0_hsl(0_0%_100%/0.18)]">
+                <Icon className="h-4 w-4" />
               </div>
             )}
           </div>
-          {Icon && (
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[8px] border border-primary/20 bg-primary/[0.1] text-primary shadow-[inset_0_1px_0_hsl(0_0%_100%/0.22),0_14px_28px_hsl(var(--primary)/0.12)]">
-              <Icon className="h-5 w-5" />
-            </div>
-          )}
+          <div className="min-w-0">
+            <p className="metric-value tabular-nums">{value}</p>
+          </div>
         </div>
+        {hint && (
+          <div className={cn("mt-3 flex min-w-0 items-center gap-1 text-xs font-semibold leading-tight", trendColor)}>
+            {TrendIcon && <TrendIcon className="h-3.5 w-3.5 shrink-0" />}
+            <span className="min-w-0 truncate">{hint}</span>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

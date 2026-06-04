@@ -57,7 +57,7 @@ export default function Tendencias() {
         <KPICard label="Volumen" value={formatKg(chartData.reduce((s, d) => s + d.kg, 0))} icon={Package} />
       </section>
       <Chart title="Precio producto por campana">
-        <ResponsiveContainer width="100%" height={300}>
+        <ResponsiveContainer width="100%" height={400}>
           <AreaChart data={chartData} margin={MARGIN}>
             <CartesianGrid {...GRID} />
             <XAxis dataKey="label" {...XAXIS} />
@@ -67,9 +67,9 @@ export default function Tendencias() {
           </AreaChart>
         </ResponsiveContainer>
       </Chart>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-5 xl:grid-cols-2">
         <Chart title="Minimo / maximo por campana">
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={340}>
             <ComposedChart data={chartData} margin={MARGIN}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" {...XAXIS} />
@@ -81,7 +81,7 @@ export default function Tendencias() {
           </ResponsiveContainer>
         </Chart>
         <Chart title="Variacion %">
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={340}>
             <BarChart data={chartData} margin={MARGIN}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" {...XAXIS} />
@@ -92,7 +92,7 @@ export default function Tendencias() {
           </ResponsiveContainer>
         </Chart>
         <Chart title="Volumen y facturacion">
-          <ResponsiveContainer width="100%" height={260}>
+          <ResponsiveContainer width="100%" height={340}>
             <ComposedChart data={chartData} margin={MARGIN}>
               <CartesianGrid {...GRID} />
               <XAxis dataKey="label" {...XAXIS} />

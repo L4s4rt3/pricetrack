@@ -843,8 +843,19 @@
   .panel-kicker { @apply text-[11px] font-semibold uppercase tracking-wider text-muted-foreground; }
   .metric-strip { @apply grid gap-3 sm:grid-cols-2 xl:grid-cols-4; }
 
+  .metric-value {
+    display: block;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: clamp(1.35rem, 1.55vw, 1.85rem);
+    font-weight: 650;
+    line-height: 1.08;
+    letter-spacing: 0;
+    color: hsl(var(--foreground));
+  }
+
   /* ── Data table utility ── */
-  .data-table { @apply w-full text-sm; }
+  .data-table { @apply w-full text-sm; font-size: 0.92rem; }
   .data-table thead { @apply border-b; }
   .data-table th { @apply px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground; }
   .data-table td { @apply px-4 py-3 align-middle; }
