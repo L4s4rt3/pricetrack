@@ -69,7 +69,7 @@ test("dashboard uses aggregate summary hook instead of full precios rows", () =>
 });
 
 test("dashboard aggregate summary stays in precios invalidation scope", () => {
-  assert.match(dashboardSummaryHook, /dashboardSummaryQueryKey\s*=\s*\[\s*"precios",\s*"dashboard-summary",\s*"last-6-months"\s*\]\s+as const/);
+  assert.match(dashboardSummaryHook, /dashboardSummaryQueryKey\s*=\s*\[\s*"precios",\s*"dashboard-summary",\s*"last-6-months",\s*"production-fallback-v2"\s*\]\s+as const/);
 });
 
 test("dashboard summary does not block startup when aggregate view is missing", () => {

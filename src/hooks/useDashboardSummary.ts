@@ -22,7 +22,7 @@ export interface DashboardMonthSummary {
   destinos?: number;
 }
 
-export const dashboardSummaryQueryKey = ["precios", "dashboard-summary", "last-6-months"] as const;
+export const dashboardSummaryQueryKey = ["precios", "dashboard-summary", "last-6-months", "production-fallback-v2"] as const;
 
 export function isMissingDashboardSummarySource(error: unknown) {
   if (!error || typeof error !== "object") return false;

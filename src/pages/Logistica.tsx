@@ -31,12 +31,13 @@ import { generateExactCmrPdf, generateExactRoutePdf } from "@/features/logistica
 import { worksheetXml } from "@/features/logistica/excelExporters";
 
 const today = new Date().toISOString().slice(0, 10);
-const presetsQueryKey = ["logistics-presets"] as const;
-const templatesQueryKey = ["logistics-templates-for-presets"] as const;
-const cmrClientsQueryKey = ["cmr-clients"] as const;
-const cmrCarriersQueryKey = ["cmr-carriers"] as const;
-const routeClientsQueryKey = ["route-clients"] as const;
-const routeCarriersQueryKey = ["route-carriers"] as const;
+const logisticsDirectoryCacheVersion = "split-directories-v2";
+const presetsQueryKey = ["logistics-presets", logisticsDirectoryCacheVersion] as const;
+const templatesQueryKey = ["logistics-templates-for-presets", logisticsDirectoryCacheVersion] as const;
+const cmrClientsQueryKey = ["cmr-clients", logisticsDirectoryCacheVersion] as const;
+const cmrCarriersQueryKey = ["cmr-carriers", logisticsDirectoryCacheVersion] as const;
+const routeClientsQueryKey = ["route-clients", logisticsDirectoryCacheVersion] as const;
+const routeCarriersQueryKey = ["route-carriers", logisticsDirectoryCacheVersion] as const;
 
 const CMR_COMPANY = "Lasarte Cítricos S.L.\nCIF: B14800304\nCtra. Madrid-Cádiz, km 461\n41400";
 

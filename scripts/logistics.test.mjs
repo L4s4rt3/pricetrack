@@ -7,10 +7,11 @@ const routeDirectoryMigration = readFileSync(new URL("../supabase/migrations/202
 const populateDirectoryMigration = readFileSync(new URL("../supabase/migrations/20260604_populate_logistics_directories_from_templates.sql", import.meta.url), "utf8");
 
 test("logistics keeps CMR and route document directories separated", () => {
-  assert.match(logistica, /const cmrClientsQueryKey = \["cmr-clients"\] as const/);
-  assert.match(logistica, /const cmrCarriersQueryKey = \["cmr-carriers"\] as const/);
-  assert.match(logistica, /const routeClientsQueryKey = \["route-clients"\] as const/);
-  assert.match(logistica, /const routeCarriersQueryKey = \["route-carriers"\] as const/);
+  assert.match(logistica, /const logisticsDirectoryCacheVersion = "split-directories-v2"/);
+  assert.match(logistica, /const cmrClientsQueryKey = \["cmr-clients", logisticsDirectoryCacheVersion\] as const/);
+  assert.match(logistica, /const cmrCarriersQueryKey = \["cmr-carriers", logisticsDirectoryCacheVersion\] as const/);
+  assert.match(logistica, /const routeClientsQueryKey = \["route-clients", logisticsDirectoryCacheVersion\] as const/);
+  assert.match(logistica, /const routeCarriersQueryKey = \["route-carriers", logisticsDirectoryCacheVersion\] as const/);
 
   assert.match(logistica, /const \[cmrClients, setCmrClients\] = useState<CmrClient\[\]>\(\[\]\)/);
   assert.match(logistica, /const \[routeClients, setRouteClients\] = useState<CmrClient\[\]>\(\[\]\)/);
