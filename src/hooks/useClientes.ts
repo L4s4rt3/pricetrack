@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { usePrecios } from "./usePrecios";
 import { useConfeccion } from "./useConfeccion";
 import { getClientName, getLineClassification, isCountableSaleRow, isVisibleRow, saleLineValue } from "@/lib/parsers";
-import type { PrecioRow } from "@/lib/types";
+import type { ConfeccionRow, PrecioRow } from "@/lib/types";
 
 interface ClienteSummary {
   nombre: string;
@@ -29,16 +29,13 @@ function saleNaturalKey(row: PrecioRow) {
   ].join("§");
 }
 
-export function useClientes() {
-  const { data: precios } = usePrecios();
-  const { data: confeccion } = useConfeccion();
-
-  return useMemo(() => {
+export function buildClientes(precios?: PrecioRow[], confeccion?: ConfeccionRow[]) {
     const clientes = new Map<string, ClienteSummary>();
 
     const seenSales = new Set<string>();
 
-    (precios ?? []).filter(isVisibleRow).forEach((d) => {
+    (precios ?? []).forEach((d) => {
+      if (!isVisibleRow(d)) return;
       const key = saleNaturalKey(d);
       if (seenSales.has(key)) return;
       seenSales.add(key);
@@ -91,5 +88,11 @@ export function useClientes() {
     });
 
     return Array.from(clientes.values()).sort((a, b) => b.facturacion - a.facturacion || b.confeccionValor - a.confeccionValor);
-  }, [precios, confeccion]);
+}
+
+export function useClientes() {
+  const { data: precios } = usePrecios();
+  const { data: confeccion } = useConfeccion();
+
+  return useMemo(() => buildClientes(precios, confeccion), [precios, confeccion]);
 }

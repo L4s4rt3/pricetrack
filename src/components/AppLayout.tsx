@@ -27,6 +27,7 @@ import { TopBar } from "@/components/TopBar";
 import { MIN_CAMPAIGN_LABEL } from "@/lib/campaigns";
 import { isNavigationRouteActive, navigationSections, type NavigationItem } from "@/lib/navigation";
 import { navigationIcons } from "@/lib/navigationIcons";
+import { preloadPage } from "@/lib/pagePreloads";
 
 function isSectionActive(pathname: string, item: NavigationItem) {
   return (
@@ -48,6 +49,8 @@ export default function AppLayout() {
         to={item.to}
         end={item.to === "/"}
         className={className}
+        onFocus={() => preloadPage(item.to)}
+        onMouseEnter={() => preloadPage(item.to)}
       >
         <Icon />
         <span>{item.label}</span>

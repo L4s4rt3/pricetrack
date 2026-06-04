@@ -2,6 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { LucideIcon } from "lucide-react";
 import { TrendingDown, TrendingUp } from "lucide-react";
+import { memo } from "react";
 
 interface KPICardProps {
   label: string;
@@ -12,7 +13,7 @@ interface KPICardProps {
   className?: string;
 }
 
-export function KPICard({ label, value, hint, icon: Icon, trend, className }: KPICardProps) {
+export const KPICard = memo(function KPICard({ label, value, hint, icon: Icon, trend, className }: KPICardProps) {
   const trendColor = {
     up: "text-success",
     down: "text-destructive",
@@ -47,4 +48,4 @@ export function KPICard({ label, value, hint, icon: Icon, trend, className }: KP
       </CardContent>
     </Card>
   );
-}
+});

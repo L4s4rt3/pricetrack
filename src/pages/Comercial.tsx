@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { Euro, FileText, Package, ReceiptText, Search, Users } from "lucide-react";
 import { DataTable } from "@/components/DataTable";
@@ -25,8 +25,9 @@ export default function Comercial() {
   const rows = useEnrichedPrecios(precios);
   const stats = summaryStats(rows);
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const traceRows = useMemo(() => {
-    const needle = search.trim().toLowerCase();
+    const needle = deferredSearch.trim().toLowerCase();
     const completeRows = (confeccion ?? []).filter((row) => (row.cliente_nombre || row.denominacion_social) && row.kg_netos > 0 && (row.pvp_kg > 0 || row.pvp_total > 0));
     return completeRows
       .filter((row) => {
@@ -46,7 +47,7 @@ export default function Comercial() {
         ].join(" ").toLowerCase().includes(needle);
       })
       .slice(0, 24);
-  }, [confeccion, search]);
+  }, [confeccion, deferredSearch]);
   const traceKg = (confeccion ?? []).reduce((sum, row) => sum + row.kg_netos, 0);
 
   if (isPreciosLoading || isConfeccionLoading) {

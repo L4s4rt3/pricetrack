@@ -123,7 +123,7 @@ async function hydrateRemainingConfeccion(queryClient: QueryClient) {
   return historyLoadPromise;
 }
 
-export function useConfeccion() {
+export function useConfeccion({ hydrateHistory = false }: { hydrateHistory?: boolean } = {}) {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: confeccionQueryKey,
@@ -132,9 +132,9 @@ export function useConfeccion() {
   });
 
   useEffect(() => {
-    if (!query.data?.length || fullDatasetReady) return;
+    if (!hydrateHistory || !query.data?.length || fullDatasetReady) return;
     void hydrateRemainingConfeccion(queryClient);
-  }, [query.data?.length, queryClient]);
+  }, [hydrateHistory, query.data?.length, queryClient]);
 
   return query;
 }

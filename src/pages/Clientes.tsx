@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Euro, Package, Search, Users } from "lucide-react";
 import { DataTable } from "@/components/DataTable";
@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useClientes } from "@/hooks/useClientes";
+import { buildClientes } from "@/hooks/useClientes";
 import { useConfeccion } from "@/hooks/useConfeccion";
 import { usePrecios } from "@/hooks/usePrecios";
 import { formatEur, formatKg, formatNum } from "@/lib/format";
@@ -16,13 +16,17 @@ import { BAR_STYLE, C, CHART_PANEL_CLASS, GRID, MARGIN, XAXIS, YAXIS, barFill, G
 import { campaignRows, summaryStats, useEnrichedPrecios } from "./pageHelpers";
 
 export default function Clientes() {
-  const clientes = useClientes();
   const { data, isLoading: isPreciosLoading } = usePrecios();
   const { data: confeccion, isLoading: isConfeccionLoading } = useConfeccion();
   const salesRows = useEnrichedPrecios(data);
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [selected, setSelected] = useState("");
-  const filtered = useMemo(() => clientes.filter((c) => c.nombre.toLowerCase().includes(search.toLowerCase())), [clientes, search]);
+  const clientes = useMemo(() => buildClientes(data, confeccion), [data, confeccion]);
+  const filtered = useMemo(() => {
+    const needle = deferredSearch.trim().toLowerCase();
+    return needle ? clientes.filter((c) => c.nombre.toLowerCase().includes(needle)) : clientes;
+  }, [clientes, deferredSearch]);
   const top = filtered.slice(0, 12);
   const revenue = filtered.reduce((s, c) => s + c.facturacion, 0);
   const kg = filtered.reduce((s, c) => s + c.kg, 0);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { startTransition, useEffect, useMemo, useState } from "react";
 import { RotateCcw, Search } from "lucide-react";
 import { FilterField, FilterPanel } from "@/components/FilterPanel";
 import { Input } from "@/components/ui/input";
@@ -282,8 +282,9 @@ export function SaleFilterPanel({
   compact?: boolean;
 }) {
   const set = (key: keyof SaleFilters, value: string) => {
-    const next = { ...filters, [key]: value };
-    onChange(pruneInvalidSaleSubfilters(rows, next, key));
+    startTransition(() => {
+      onChange({ ...filters, [key]: value });
+    });
   };
   const optionSets = useMemo(
     () => saleFilterOptionSets(rows, filters),

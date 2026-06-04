@@ -13,7 +13,7 @@ import { formatEur, formatKg, formatNum } from "@/lib/format";
 import { PaginationControls, SelectFilter, usePagination } from "./pageHelpers";
 
 export default function Confeccion() {
-  const { data, isLoading } = useConfeccion();
+  const { data, isLoading } = useConfeccion({ hydrateHistory: true });
   const [search, setSearch] = useState("");
   const [tipo, setTipo] = useState("");
   const [situacion, setSituacion] = useState("");
