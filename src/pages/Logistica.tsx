@@ -31,7 +31,7 @@ import { generateExactCmrPdf, generateExactRoutePdf } from "@/features/logistica
 import { worksheetXml } from "@/features/logistica/excelExporters";
 
 const today = new Date().toISOString().slice(0, 10);
-const logisticsDirectoryCacheVersion = "split-directories-v3";
+const logisticsDirectoryCacheVersion = "split-directories-v4";
 const presetsQueryKey = ["logistics-presets", logisticsDirectoryCacheVersion] as const;
 const templatesQueryKey = ["logistics-templates-for-presets", logisticsDirectoryCacheVersion] as const;
 const cmrClientsQueryKey = ["cmr-clients", logisticsDirectoryCacheVersion] as const;
