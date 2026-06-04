@@ -7,10 +7,10 @@ const TRANSPORT_ROOT = process.env.TRANSPORT_ROOT ?? "D:\\transporte";
 const ROUTE_ROOT = path.join(TRANSPORT_ROOT, "HOJAS DE RUTA");
 const CMR_ROOT = path.join(TRANSPORT_ROOT, "CMR");
 const BUCKET = "logistics-templates";
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? "https://lhbmxmdjyrbhjcsazhqi.supabase.co";
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? "https://whakvewixzlvpmpulfxd.supabase.co";
 const SUPABASE_ANON_KEY =
   process.env.VITE_SUPABASE_ANON_KEY ??
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxoYm14bWRqeXJiaGpjc2F6aHFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc1MDUyMzksImV4cCI6MjA5MzA4MTIzOX0.5__CcpAeARN2A3lIkZqlS_J3FleK7mxMU4pIFqa_y6s";
+  "sb_publishable_J8iZ0bqsSbWkkNXi3fv5WQ_LPha7MRc";
 const BATCH_SIZE = 6;
 
 const mimeTypes = {
